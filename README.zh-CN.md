@@ -40,6 +40,8 @@ codex plugin add token-galaxy@token-galaxy
 
 ## 作为独立 Mac 应用运行
 
+可从 [Releases](https://github.com/ssg87/token-galaxy/releases) 下载 Intel / Apple Silicon 通用应用包。它使用本地临时签名，尚未进行 Apple 公证；也可按下面步骤自行编译。
+
 ```sh
 git clone https://github.com/ssg87/token-galaxy.git
 cd token-galaxy

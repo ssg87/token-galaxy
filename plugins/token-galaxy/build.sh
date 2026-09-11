@@ -24,5 +24,6 @@ cat > "$OUT/Contents/Info.plist" <<'PLIST'
 PLIST
 cp "$ROOT/Resources/Cosmos.metal" "$OUT/Contents/Resources/Cosmos.metal"
 cp "$ROOT/Resources/AppIcon.icns" "$OUT/Contents/Resources/AppIcon.icns"
+cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$OUT/Contents/Resources/"
 codesign --force --sign - "$OUT"
 print "$OUT"

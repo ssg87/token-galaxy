@@ -44,6 +44,8 @@ The repository includes its marketplace at `.agents/plugins/marketplace.json`. S
 
 ## Run as a standalone app
 
+A prebuilt universal app is available on the [Releases page](https://github.com/ssg87/token-galaxy/releases). It contains Intel and Apple Silicon binaries; it is ad-hoc signed and not notarized. Source builds remain available below.
+
 ```sh
 git clone https://github.com/ssg87/token-galaxy.git
 cd token-galaxy

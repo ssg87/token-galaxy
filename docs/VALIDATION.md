@@ -9,6 +9,8 @@ Local validation on 2026-09-11, Intel macOS 15 with Metal and a physical Touch B
 - Dual-source process probe: passed; duplicates did not add tokens, incomplete records waited, one unavailable source retained prior values while the other continued.
 - Integration and global-total probes: passed, including 82 records with an 80-record viewport and older index changes.
 - Real 60-second idle focus process probe: passed; selected the active main conversation rather than a child.
+- Apple Silicon cross-compilation and universal binary assembly: passed. Universal bundle self-test passed on Intel; signature verification and binary personal-path/credential-pattern scans passed.
+- Public GitHub marketplace installation into an isolated Codex home: passed using the two README commands.
 - Plugin manifest validation and tracked-file publication audit: passed.
 - README captures use generated synthetic sessions, with visually inspected native rendering.
 
