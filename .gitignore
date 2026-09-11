@@ -1,0 +1,7 @@
+**/Outputs/
+**/Backups/
+.DS_Store
+__pycache__/
+*.pyc
+*.dSYM/
+.env*

@@ -1,0 +1,20 @@
+{
+  "name": "token-galaxy",
+  "interface": {
+    "displayName": "Token Galaxy"
+  },
+  "plugins": [
+    {
+      "name": "token-galaxy",
+      "source": {
+        "source": "local",
+        "path": "./plugins/token-galaxy"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

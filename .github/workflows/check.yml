@@ -1,0 +1,15 @@
+name: macOS checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: ./build.sh
+      - name: Fixture checks
+        run: "'plugins/token-galaxy/Outputs/Token Galaxy.app/Contents/MacOS/TokenGalaxy' --self-test"
+      - name: Publication audit
+        run: python3 scripts/audit_publication.py
