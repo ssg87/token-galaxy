@@ -108,15 +108,17 @@ final class GalaxyModel {
     private(set) var handoffAge: Float = 100
     private var leadID: String?
     private var lastFocusMessage: TimeInterval = 0
-    private func rotationRate(_ n: NodeMotion) -> Float { 0.045 + n.workEnergy * 0.75 + n.tokenEnergy * 0.62 }
-    func rotationRate(for id: String) -> Float { state[id].map { rotationRate($0) } ?? 0.045 }
+    // A slow idle baseline; observed work and token acceleration retain their original strength.
+    private let idleRotationRate: Float = 0.01125
+    private func rotationRate(_ n: NodeMotion) -> Float { idleRotationRate + n.workEnergy * 0.75 + n.tokenEnergy * 0.62 }
+    func rotationRate(for id: String) -> Float { state[id].map { rotationRate($0) } ?? idleRotationRate }
     func fastestConversation(keeping current: String?) -> String? {
         let candidates = tasks.filter { $0.isMainConversation && $0.readIssue == nil && $0.pendingBytes == 0 }
         let ranked = candidates.sorted {
             let a = rotationRate(for: $0.id), b = rotationRate(for: $1.id)
             return a == b ? $0.id < $1.id : a > b
         }
-        guard let best = ranked.first, rotationRate(for: best.id) > 0.05 else { return nil }
+        guard let best = ranked.first, rotationRate(for: best.id) > idleRotationRate + 0.005 else { return nil }
         if let current = current, candidates.contains(where: { $0.id == current }),
            rotationRate(for: current) >= rotationRate(for: best.id) - 0.001 { return current }
         return best.id
@@ -297,7 +299,7 @@ final class GalaxyModel {
          "flowRate": 0.035 + workDrive * 0.34 + tokenDrive * 0.28,
          "receivedEvents": receivedEvents, "receivedTokens": receivedTokens,
          "leadTier": nodes.first?.visual.x ?? 0, "leadRadius": nodes.first?.space.w ?? 0,
-         "leadRotationRate": shown.first.map { rotationRate(for: $0.id) } ?? 0.045,
+         "leadRotationRate": shown.first.map { rotationRate(for: $0.id) } ?? idleRotationRate,
          "eventPhases": shown.compactMap { state[$0.id]?.workPhase.label }]
     }
 }
