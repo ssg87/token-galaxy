@@ -108,11 +108,12 @@ final class GalaxyModel {
     private(set) var handoffAge: Float = 100
     private var leadID: String?
     private var lastFocusMessage: TimeInterval = 0
-    // A slow idle baseline; observed work and token acceleration retain their original strength.
+    // Slow idle and sustained work stay stable; newly observed tokens get a stronger surge.
     private let idleRotationRate: Float = 0.01125
     private func rotationRate(_ n: NodeMotion) -> Float {
         let activeBlend = min(1, max(n.workEnergy, n.tokenEnergy) / 0.26)
-        return idleRotationRate + (0.045 - idleRotationRate) * activeBlend + n.workEnergy * 0.75 + n.tokenEnergy * 0.62
+        let tokenRotation = n.tokenEnergy * 1.8 + n.tokenEnergy * n.tokenEnergy * 0.8
+        return idleRotationRate + (0.045 - idleRotationRate) * activeBlend + n.workEnergy * 0.75 + tokenRotation
     }
     func rotationRate(for id: String) -> Float { state[id].map { rotationRate($0) } ?? idleRotationRate }
     func fastestConversation(keeping current: String?) -> String? {

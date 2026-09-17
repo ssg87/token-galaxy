@@ -1,5 +1,9 @@
 # Changes
 
+## 0.7.3 — 2026-09-17
+
+Make new-token rotation more pronounced with a continuous increasing response to token energy. The 100 / 100,000 / 1,000,000-token regression cases must each exceed three times their previous token-only rotation and remain ordered by increment size. Idle and sustained-work rotation, event envelopes, particle counts, geometry, preferences and accounting remain unchanged. Regression checks also verify the surge returns to slow idle.
+
 ## 0.7.2 — 2026-09-17
 
 Restore the original active rotation baseline while retaining 0.7.1's slower idle speed. Keep active rotation through reply, tool-result, planning and delegation gaps for both providers when recent local records still indicate working. Completion, interruption, waiting, stale records and read errors do not sustain acceleration. No token counts, geometry or appearance settings are changed.

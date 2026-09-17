@@ -8,6 +8,7 @@ func runVisualChecks() throws {
     try runSpiritChecks();try runInputWaitChecks()
     try runIdleFocusChecks()
     try runSustainedRotationChecks()
+    try runTokenSurgeRotationChecks()
     try runUnifiedFocusChecks();try runRecentRiverChecks()
     let scales = [100, 100_000, 999_999, 1_000_000, 10_000_000].map { TokenScale.cumulative(Int64($0)) }
     try validationCheck(scales.map { $0.tier } == [0, 2, 2, 3, 4], "Token tiers do not cross the 1M boundary")
@@ -247,4 +248,23 @@ func runSustainedRotationChecks() throws {
         }
     }
     print("PASS: both providers retain active rotation through 20-second record gaps; complete/abort/wait/stale/error settle; no invented tokens")
+}
+
+func runTokenSurgeRotationChecks() throws {
+    let task=TaskUsage(id:"surge",title:"fixture",project:"fixture",total:1_000_000,input:nil,cached:nil,output:nil,source:"fixture")
+    var rates=[Float]()
+    for amount:Int64 in [100,100_000,1_000_000] {
+        let model=GalaxyModel();model.update([task],deltas:[:],events:[:]);model.step(0.1)
+        let radius=model.nodes[0].space.w,grains=model.nodes[0].visual.z
+        model.update([task],deltas:[task.id:amount],events:[:]);model.step(0.1)
+        let energy=model.nodes[0].motion.w,rate=model.rotationRate(for:task.id)
+        try validationCheck(rate>(0.045+energy*0.62)*3,"New-token surge is not visibly stronger than previous rotation")
+        try validationCheck(model.nodes[0].space.w==radius && model.nodes[0].visual.z==grains,"Rotation surge changed size or particle count")
+        rates.append(rate)
+        for _ in 0..<360 {model.step(1.0/30)}
+        try validationCheck(abs(model.rotationRate(for:task.id)-0.01125)<0.0001,"Surge did not return to slow idle")
+        try validationCheck(model.evidence()["receivedTokens"] as? Int64 == amount,"Surge changed recorded usage")
+    }
+    try validationCheck(rates[0]<rates[1] && rates[1]<rates[2],"Larger increments did not rotate faster")
+    print("PASS: token surge over 3x previous rotation, ordered by actual increments; unchanged size/particles/counters; smooth return to idle")
 }
