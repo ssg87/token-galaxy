@@ -110,7 +110,10 @@ final class GalaxyModel {
     private var lastFocusMessage: TimeInterval = 0
     // A slow idle baseline; observed work and token acceleration retain their original strength.
     private let idleRotationRate: Float = 0.01125
-    private func rotationRate(_ n: NodeMotion) -> Float { idleRotationRate + n.workEnergy * 0.75 + n.tokenEnergy * 0.62 }
+    private func rotationRate(_ n: NodeMotion) -> Float {
+        let activeBlend = min(1, max(n.workEnergy, n.tokenEnergy) / 0.26)
+        return idleRotationRate + (0.045 - idleRotationRate) * activeBlend + n.workEnergy * 0.75 + n.tokenEnergy * 0.62
+    }
     func rotationRate(for id: String) -> Float { state[id].map { rotationRate($0) } ?? idleRotationRate }
     func fastestConversation(keeping current: String?) -> String? {
         let candidates = tasks.filter { $0.isMainConversation && $0.readIssue == nil && $0.pendingBytes == 0 }
@@ -228,11 +231,12 @@ final class GalaxyModel {
             let workAge = clock - n.workAt
             let workDuration: Float = n.workPhase == .thinking ? 5.5 : n.workPhase == .complete ? 2.2 : 3.2
             var workTarget = n.workLevel * max(0, 1 - max(0, workAge - 0.35) / workDuration)
-            if (n.workPhase == .thinking || n.workPhase == .tool), task.isWorking,
-               workAge < 60, Date().timeIntervalSince1970 - (task.lastEventAt ?? 0) < 60 {
+            // A live reply or tool result is still work between log records. Keep the
+            // same activity floor for both providers until completion/wait/staleness.
+            if task.isWorking, task.readIssue == nil, workAge < 120,
+               ![WorkPhase.complete, .interrupted, .waiting, .quiet].contains(n.workPhase) {
                 workTarget = max(workTarget, 0.26)
             }
-            if task.provider == .claude,task.isWorking,workAge<120,![WorkPhase.complete,.interrupted,.waiting,.quiet].contains(n.workPhase){workTarget=max(workTarget,0.26)}
             let scale = TokenScale.increment(n.tokenCount)
             let tokenTarget = n.tokenCount > 0 ? scale.strength * max(0, 1 - max(0, clock - n.tokenAt - 0.2) / scale.duration) : 0
             n.workEnergy += (workTarget - n.workEnergy) * min(1, dt * (workTarget > n.workEnergy ? 26 : 5))

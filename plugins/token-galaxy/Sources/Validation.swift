@@ -7,6 +7,7 @@ func runVisualChecks() throws {
     try runClaudeChecks()
     try runSpiritChecks();try runInputWaitChecks()
     try runIdleFocusChecks()
+    try runSustainedRotationChecks()
     try runUnifiedFocusChecks();try runRecentRiverChecks()
     let scales = [100, 100_000, 999_999, 1_000_000, 10_000_000].map { TokenScale.cumulative(Int64($0)) }
     try validationCheck(scales.map { $0.tier } == [0, 2, 2, 3, 4], "Token tiers do not cross the 1M boundary")
@@ -222,4 +223,28 @@ func runRecentRiverChecks() throws {
     m.update([c,a],deltas:[c.id:9900,a.id:100],events:[:]);m.step(2)
     try validationCheck(m.recentVisual.z<0.05,"Recent Codex majority did not dominate river")
     print("PASS: exact 10-second sums; no history/replay; Claude/Codex majority and expiration; display-only smoothing")
+}
+
+func runSustainedRotationChecks() throws {
+    for provider in [UsageProvider.codex, .claude] {
+        for phase in [WorkPhase.thinking, .tool, .reply, .result, .input, .plan, .spawn] {
+            var task=TaskUsage(id:"sustained",title:"fixture",project:"fixture",total:100,input:nil,cached:nil,output:nil,source:"fixture")
+            task.provider=provider;task.lifecycle="task_started";task.lastEventAt=Date().timeIntervalSince1970
+            let model=GalaxyModel();model.update([task],deltas:[:],events:[task.id:[WorkEvent(id:"start",at:task.lastEventAt!,phase:phase)]])
+            for _ in 0..<600 { model.step(1.0/30) }
+            try validationCheck(model.rotationRate(for:task.id)>0.239,"Live activity fell back to idle between records: \(provider) \(phase)")
+            try validationCheck(model.evidence()["receivedTokens"] as? Int64 == 0,"Sustained work fabricated token usage")
+            for stop in ["task_complete","turn_aborted","waiting","stale","read-error"] {
+                var stopped=task
+                if stop=="waiting" {stopped.awaitingInput=true}
+                else if stop=="stale" {stopped.lastEventAt=Date().timeIntervalSince1970-121}
+                else if stop=="read-error" {stopped.readIssue="fixture"}
+                else {stopped.lifecycle=stop}
+                model.update([stopped],deltas:[:],events:[:]);for _ in 0..<180 {model.step(1.0/30)}
+                try validationCheck(abs(model.rotationRate(for:task.id)-0.01125)<0.0001,"Stopped/stale work did not settle to slow idle")
+                model.update([task],deltas:[:],events:[task.id:[WorkEvent(id:stop,at:task.lastEventAt!,phase:phase)]]);for _ in 0..<180 {model.step(1.0/30)}
+            }
+        }
+    }
+    print("PASS: both providers retain active rotation through 20-second record gaps; complete/abort/wait/stale/error settle; no invented tokens")
 }

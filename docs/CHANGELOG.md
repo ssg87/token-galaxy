@@ -1,5 +1,11 @@
 # Changes
 
+## 0.7.2 — 2026-09-17
+
+Restore the original active rotation baseline while retaining 0.7.1's slower idle speed. Keep active rotation through reply, tool-result, planning and delegation gaps for both providers when recent local records still indicate working. Completion, interruption, waiting, stale records and read errors do not sustain acceleration. No token counts, geometry or appearance settings are changed.
+
+Regression coverage exercises seven working phases for both providers across 20-second record gaps and checks return to idle for five stop/stale conditions. A native process probe checks an actual JSONL reply gap and subsequent completion without inventing tokens.
+
 ## 0.7.1 — 2026-09-17
 
 Reduce the galaxy's idle rotation baseline from 0.045 to 0.01125 (75% slower). Keep observed work/token acceleration coefficients, geometry, particle counts, size controls and opacity unchanged. The active-conversation threshold retains its original margin above idle.
