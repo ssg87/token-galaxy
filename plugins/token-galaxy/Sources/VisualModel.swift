@@ -142,7 +142,17 @@ final class GalaxyModel {
         }
         var freshUsage=SIMD2<Double>(repeating:0)
         for t in items {
-            if state[t.id] == nil { var n = NodeMotion(); n.born = clock; n.phase = stableSeed(t.id) * 9; state[t.id] = n }
+            if state[t.id] == nil {
+                var n = NodeMotion(); n.born = clock; n.phase = stableSeed(t.id) * 9
+                // Opening another view restores live state, never historical token bursts.
+                let phase = t.events.last?.phase ?? (t.lifecycle == "task_started" ? .thinking : .quiet)
+                if t.isWorking, t.readIssue == nil, ![WorkPhase.quiet,.complete,.interrupted,.waiting].contains(phase) {
+                    n.workPhase = phase
+                    n.workAt = clock - Float(max(0,Date().timeIntervalSince1970 - (t.lastEventAt ?? 0)))
+                    n.workEnergy = 0.26
+                }
+                state[t.id] = n
+            }
             if let fresh = events[t.id], !fresh.isEmpty {
                 // Prefer meaningful transitions over a trailing generic reply marker.
                 for event in fresh {
@@ -290,12 +300,18 @@ final class GalaxyModel {
         for (index, t) in shown.enumerated() {
             guard let parentID = t.parentID, let parent = shown.firstIndex(where: { $0.id == parentID }), parent != index else { continue }
             let a = nodes[parent], b = nodes[index]
-            let useToken = b.motion.w > b.motion.y
-            let age = useToken ? b.flow.y : b.flow.x
-            let progress = max(0, age / (useToken ? 1.7 : 1.25))
-            let active = max(b.motion.y, b.motion.w)
+            let childPhase=WorkPhase(rawValue:Int(b.motion.z)) ?? .quiet
+            let childActive=max(b.motion.y,b.motion.w)
+            // Dispatch is a visual cue on an existing active parent-child relationship,
+            // not a claim that an unobserved message or extra tokens were generated.
+            let dispatch = t.isWorking && Int(a.motion.z)==WorkPhase.spawn.rawValue ? a.motion.y:0
+            let useParent=dispatch>childActive
+            let useToken = !useParent && b.motion.w > b.motion.y
+            let age = useParent ? a.flow.x:(useToken ? b.flow.y:b.flow.x)
+            let active = max(childActive,dispatch)
+            let returning = !useParent && [.result,.reply,.complete].contains(childPhase)
             links.append(LinkGPU(source: a.space, target: b.space,
-                                 style: SIMD4(active, progress, t.provider == .claude ? -max(0.0001,b.visual.w):b.visual.w, b.motion.z == Float(WorkPhase.result.rawValue) ? -1 : 1)))
+                                 style: SIMD4(active, max(0,age/(useToken ? 1.25:1.05)), t.provider == .claude ? -max(0.0001,b.visual.w):b.visual.w, returning ? -1:1)))
         }
     }
     func evidence() -> [String: Any] {

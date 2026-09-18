@@ -1,6 +1,6 @@
 {
   "name": "token-galaxy",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "description": "Native macOS token galaxy for local Codex and Claude Code sessions",
   "author": {
     "name": "ssg87"

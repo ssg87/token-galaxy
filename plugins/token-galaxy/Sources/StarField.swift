@@ -18,13 +18,14 @@ final class StarField: NSView, MTKViewDelegate {
     var onResize: ((CGFloat) -> Void)?
     var onInteraction: (() -> Void)?
     var isStrip = false
-    var isOverview = false
-    var paused = false { didSet { metal?.isPaused = paused; metal?.draw() } }
+    var isOverview = false {didSet{configureFrameDriver()}}
+    var paused = false { didSet { guard paused != oldValue else{return}; lastFrame=0; metal?.isPaused=isOverview || paused; metal?.draw() } }
     var selected: String? { didSet { model.selected = selected } }
     var claudeLogoScale:Float = { let v=UserDefaults.standard.double(forKey:"claudeLogoScale");return v>0 ? Float(min(1.6,max(0.8,v))):1.4 }()
     private var resizeSteps=OrbResizeSteps()
     var animateAmbient = true
     var stale = false { didSet { model.stale = stale } }
+    private var overviewTimer:Timer?
     private var metal: ClearMetalView?
     private var queue: MTLCommandQueue?
     private var background: MTLRenderPipelineState?
@@ -51,6 +52,19 @@ final class StarField: NSView, MTKViewDelegate {
         setAccessibilityLabel("实时星河，点击查看任务，右键查看用量映射和代理总览")
     }
     required init?(coder: NSCoder) { fatalError() }
+    deinit {overviewTimer?.invalidate()}
+    private func configureFrameDriver(){
+        overviewTimer?.invalidate();overviewTimer=nil
+        metal?.isPaused=isOverview || paused
+        guard isOverview else{return}
+        // MTKView's automatic display link can stop after a secondary window closes.
+        // Keep this window's frames on a common-mode timer, drawing only while visible.
+        let timer=Timer(timeInterval:1.0/30,repeats:true){[weak self] _ in
+            guard let self=self,!self.paused,self.window?.isVisible==true,self.window?.isMiniaturized==false else{return}
+            self.metal?.draw()
+        }
+        timer.tolerance=0.003;overviewTimer=timer;RunLoop.main.add(timer,forMode:.common)
+    }
     private func setup() {
         guard let device = MTLCreateSystemDefaultDevice() else { rendererError = "此 Mac 的 Metal 不可用"; return }
         let view = ClearMetalView(frame: bounds, device: device)

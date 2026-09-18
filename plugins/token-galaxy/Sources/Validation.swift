@@ -9,6 +9,7 @@ func runVisualChecks() throws {
     try runIdleFocusChecks()
     try runSustainedRotationChecks()
     try runTokenSurgeRotationChecks()
+    try runOverviewStateChecks()
     try runUnifiedFocusChecks();try runRecentRiverChecks()
     let scales = [100, 100_000, 999_999, 1_000_000, 10_000_000].map { TokenScale.cumulative(Int64($0)) }
     try validationCheck(scales.map { $0.tier } == [0, 2, 2, 3, 4], "Token tiers do not cross the 1M boundary")
@@ -267,4 +268,23 @@ func runTokenSurgeRotationChecks() throws {
     }
     try validationCheck(rates[0]<rates[1] && rates[1]<rates[2],"Larger increments did not rotate faster")
     print("PASS: token surge over 3x previous rotation, ordered by actual increments; unchanged size/particles/counters; smooth return to idle")
+}
+
+func runOverviewStateChecks() throws {
+    let now=Date().timeIntervalSince1970
+    var parent=TaskUsage(id:"view-parent",title:"fixture",project:"fixture",total:1000,input:nil,cached:nil,output:nil,source:"fixture")
+    parent.lifecycle="task_started";parent.lastEventAt=now;parent.events=[WorkEvent(id:"dispatch",at:now,phase:.spawn)]
+    var child=TaskUsage(id:"view-child",title:"fixture",project:"fixture",total:100,input:nil,cached:nil,output:nil,source:"fixture")
+    child.parentID=parent.id;child.lifecycle="task_started";child.lastEventAt=now;child.events=[WorkEvent(id:"reply",at:now,phase:.reply)]
+    let model=GalaxyModel();model.update([parent,child],deltas:[:],events:[:]);model.step(0.1)
+    try validationCheck(model.rotationRate(for:parent.id)>0.239 && model.rotationRate(for:child.id)>0.239,"New view lost live parent/child activity")
+    try validationCheck(model.evidence()["receivedTokens"] as? Int64 == 0 && model.evidence()["receivedEvents"] as? Int == 0,"Opening view replayed usage or events")
+    try validationCheck(model.links.count==1 && model.links[0].style.w == -1,"Reply did not travel toward the real parent")
+    model.update([parent,child],deltas:[:],events:[parent.id:[WorkEvent(id:"dispatch-live",at:now,phase:.spawn)]]);for _ in 0..<15 {model.step(1.0/30)}
+    try validationCheck(model.links[0].style.w == 1,"Live parent dispatch did not travel toward its active child")
+    child.parentID=nil;model.update([parent,child],deltas:[:],events:[:]);try validationCheck(model.links.isEmpty,"Invented a relationship between unrelated tasks")
+    parent.lifecycle="task_complete";child.lifecycle="task_complete"
+    let idle=GalaxyModel();idle.update([parent,child],deltas:[:],events:[:]);idle.step(0.1)
+    try validationCheck(abs(idle.rotationRate(for:parent.id)-0.01125)<0.0001,"Completed task looked active when reopening")
+    print("PASS: new views restore current parent/child activity without replay; reply/dispatch direction follows known edges; completed tasks stay idle")
 }

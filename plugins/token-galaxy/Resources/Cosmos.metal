@@ -283,10 +283,10 @@ vertex Dot chainVertex(uint id [[vertex_id]],constant Link *links [[buffer(2)]],
  float behind=link.style.w>0. ? head-t:t-head;
  float tail=smoothstep(-.02,.004,behind)*exp(-max(0.,behind)*19.)*(1.-smoothstep(.18,.25,behind));
  float ambient=u.settings.w>.5 ? 0.:.09;
- float packet=tail*(ambient+link.style.x);
+ float packet=tail*(ambient+link.style.x*1.8);
  float grain=hash1(float(id)+seed*888.);
- Dot o;o.position=float4(project(p,u),0,1);o.size=1.05+packet*1.6;
- o.color=float4(clay ? float3(.851,.467,.341):silver(.05),(.13+packet*1.7)*(.55+grain*.45));return o;
+ Dot o;o.position=float4(project(p,u),0,1);o.size=1.35+min(link.style.x,1.6)*1.1+min(packet,2.)*5.;
+ o.color=float4(clay ? float3(.851,.467,.341):silver(.05),(.10+min(link.style.x,1.6)*.26+packet*2.4)*(.65+grain*.35));return o;
 }
 vertex Dot pulseVertex(uint id [[vertex_id]],uint group [[instance_id]],constant Galaxy *g [[buffer(0)]],constant Scene &u [[buffer(1)]]) {
  Galaxy a=g[group];bool usage=id>=900;uint j=id%900;

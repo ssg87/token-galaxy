@@ -1,5 +1,13 @@
 # Changes
 
+## 0.7.4 — 2026-09-18
+
+Restore current working states when a new overview/renderer opens, without replaying historical tokens or events. Synchronize overview selection with the orb, verify overview pause/resume, and avoid resetting the Metal pause state during every data refresh. Give the overview a visibility-gated common-run-loop frame driver so reopening does not depend on MTKView restarting its automatic display link. Include overview frame/pause diagnostics in the local status snapshot.
+
+Strengthen moving packets along recorded parent-child edges. Replies/results/completion return toward the parent; an observed parent dispatch can highlight its already active child relationships. These are relationship/activity cues, not an inferred transcript of messages. Independent tasks gain no fabricated edges. Existing geometry, star counts, size controls, idle/work speeds and token-surge strengths remain unchanged.
+
+Coverage includes snapshot restoration, known-edge direction, no replay, completed-task idle, and a native overview check for progressing frames through refresh, deliberate pause/resume and close/reopen.
+
 ## 0.7.3 — 2026-09-17
 
 Make new-token rotation more pronounced with a continuous increasing response to token energy. The 100 / 100,000 / 1,000,000-token regression cases must each exceed three times their previous token-only rotation and remain ordered by increment size. Idle and sustained-work rotation, event envelopes, particle counts, geometry, preferences and accounting remain unchanged. Regression checks also verify the surge returns to slow idle.
