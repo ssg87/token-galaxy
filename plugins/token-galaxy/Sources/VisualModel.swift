@@ -84,6 +84,19 @@ struct IdleConversationFocus {
 /// All visible graph edges are derived from parentID; light on an edge means that
 /// branch is active, not an assertion about a network packet or model FLOPS.
 final class GalaxyModel {
+    var overviewLayout=false {didSet{chooseVisible();rebuild()}}
+    private var overviewViewport=SIMD2<Float>(1080,370)
+    private var overviewOrder=[String](),overviewRadii=[String:Float]()
+    private(set) var overviewRoots=Set<String>(),overviewLabelRects=[String:SIMD4<Float>](),overviewFamilies=[String:String]()
+    func setOverviewViewport(_ size:SIMD2<Float>){
+        guard size.x>0,size.y>0,abs(size.x-overviewViewport.x)>0.5 || abs(size.y-overviewViewport.y)>0.5 else{return}
+        overviewViewport=size;if overviewLayout{chooseVisible();rebuild()}
+    }
+    private func isPrimary(_ id:String)->Bool {overviewLayout ? overviewRoots.contains(id):id==shown.first?.id}
+    private func desiredRadius(_ task:TaskUsage,isLead:Bool)->Float {
+        if overviewLayout{return overviewRadii[task.id] ?? 0.04}
+        return min(TokenScale.cumulative(task.total).radius*(isLead ? 0.86:(task.parentID == nil ? 0.23:0.19)),isLead ? 0.78:0.20)
+    }
     private(set) var tasks = [TaskUsage]()
     private(set) var shown = [TaskUsage]()
     private(set) var nodes = [GalaxyGPU]()
@@ -123,7 +136,7 @@ final class GalaxyModel {
         return rotationRate(n)+(isLead ? 0.01125:0.04875)*(1-blend)
     }
     func displayRotationRate(for id:String)->Float {
-        state[id].map{displayRotationRate($0,isLead:id==shown.first?.id)} ?? 0.0225
+        state[id].map{displayRotationRate($0,isLead:isPrimary(id))} ?? 0.0225
     }
 
     func fastestConversation(keeping current: String?) -> String? {
@@ -191,7 +204,13 @@ final class GalaxyModel {
         rebuild()
     }
     private func chooseVisible() {
-        guard !tasks.isEmpty else { shown = []; return }
+        guard !tasks.isEmpty else { shown = [];overviewRoots=[];overviewLabelRects=[:];overviewFamilies=[:]; return }
+        if overviewLayout {
+            let layout=OverviewConstellationLayout(tasks:tasks,previousOrder:overviewOrder,viewport:overviewViewport)
+            overviewOrder=layout.order;shown=layout.items;overviewRoots=layout.roots;overviewRadii=layout.radii;overviewLabelRects=layout.labelRects;overviewFamilies=layout.families
+            for t in shown {guard var n=state[t.id],let p=layout.positions[t.id] else{continue};n.target=p;n.position=p;n.radius=layout.radii[t.id] ?? 0.04;state[t.id]=n}
+            return
+        }
         let root = selected.map { family($0) } ?? focusID ?? family(tasks[0].id)
         func score(_ t: TaskUsage) -> Double {
             let n = state[t.id]
@@ -263,11 +282,11 @@ final class GalaxyModel {
             n.workEnergy += (workTarget - n.workEnergy) * min(1, dt * (workTarget > n.workEnergy ? 26 : 5))
             n.tokenEnergy += (tokenTarget - n.tokenEnergy) * min(1, dt * (tokenTarget > n.tokenEnergy ? 26 : 5))
             if !reduceMotion {
-                n.phase += dt * displayRotationRate(n,isLead:task.id==shown.first?.id)
+                n.phase += dt * displayRotationRate(n,isLead:isPrimary(task.id))
                 n.position += (n.target - n.position) * min(1, dt * 4)
             }
-            let isLead = task.id == shown.first?.id
-            let targetRadius = min(TokenScale.cumulative(task.total).radius * (isLead ? 0.86 : (task.parentID == nil ? 0.23 : 0.19)), isLead ? 0.78 : 0.20)
+            let isLead = isPrimary(task.id)
+            let targetRadius = desiredRadius(task,isLead:isLead)
             if n.radius == 0 || reduceMotion { n.radius = targetRadius }
             else { n.radius += (targetRadius - n.radius) * min(1, dt * (isLead ? 4.5 : 9)) }
             workPeak = max(workPeak, n.workEnergy); tokenPeak = max(tokenPeak, n.tokenEnergy)
@@ -288,19 +307,19 @@ final class GalaxyModel {
     }
     private func rebuild() {
         nodes = []
-        for (index, t) in shown.enumerated() {
+        for t in shown {
             guard let n = state[t.id] else { continue }
             let mass = TokenScale.cumulative(t.total)
             let scale = TokenScale.increment(n.tokenCount)
-            let isLead = index == 0
+            let isLead = isPrimary(t.id)
             let lead: Float = isLead ? 1 : 0
-            let targetRadius = min(mass.radius * (isLead ? 0.86 : (t.parentID == nil ? 0.23 : 0.19)), isLead ? 0.78 : 0.20)
+            let targetRadius = desiredRadius(t,isLead:isLead)
             let radius = n.radius > 0 ? n.radius : targetRadius
             let age = clock - n.workAt, tokenAge = clock - n.tokenAt
             let context = t.contextInput.flatMap { input in t.contextLimit.flatMap { $0 > 0 ? min(1, Float(input) / Float($0)) : nil } } ?? -1
-            let particles = t.provider == .claude ? (isLead ? 768:384):(isLead ? mass.grains:max(70,Int(Float(mass.grains)*0.13)))
-            let p = isLead ? SIMD3<Float>(0, 0, 0.02) : n.position
-            nodes.append(GalaxyGPU(brand:SIMD4(t.provider == .claude ? 1:0,t.readIssue != nil || t.pendingBytes>0 ? 1:0,isLead ? handoffAge : 100,0),space: SIMD4(p.x, p.y, p.z, radius),
+            let particles = overviewLayout ? (t.provider == .claude ? (isLead ? 384:96):(isLead ? min(tasks.count>80 ? 900:1600,max(320,mass.grains)):max(32,min(120,mass.grains/16)))) : (t.provider == .claude ? (isLead ? 768:384):(isLead ? mass.grains:max(70,Int(Float(mass.grains)*0.13))))
+            let p = isLead && !overviewLayout ? SIMD3<Float>(0, 0, 0.02) : n.position
+            nodes.append(GalaxyGPU(brand:SIMD4(t.provider == .claude ? 1:0,t.readIssue != nil || t.pendingBytes>0 ? 1:0,isLead && !overviewLayout ? handoffAge : 100,overviewLayout && t.id==selected ? 1:0),space: SIMD4(p.x, p.y, p.z, radius),
                 visual: SIMD4(Float(mass.tier), lead, Float(particles), stableSeed(t.id)),
                 motion: SIMD4(n.phase, n.workEnergy, Float(n.workPhase.rawValue), n.tokenEnergy),
                 flow: SIMD4(age, tokenAge, n.workSeed, context),
@@ -325,7 +344,7 @@ final class GalaxyModel {
         }
     }
     func evidence() -> [String: Any] {
-        ["recentCodexTokens":recentTotals.x,"recentClaudeTokens":recentTotals.y,"claudeRiverShare":recentVisual.z,"composition":"unified", "leadProvider":shown.first?.provider.rawValue ?? "", "leadCount":nodes.filter{$0.visual.y>0.5}.count, "handoffAge":handoffAge, "dualProvider":dualProvider,"codexWork":providerDrive.x,"codexTokens":providerDrive.y,"claudeWork":providerDrive.z,"claudeTokens":providerDrive.w,"codexFlowClock":providerClocks.x,"claudeFlowClock":providerClocks.y,"focusID": shown.first?.id ?? "", "visibleTasks": shown.count, "records": tasks.count,
+        ["recentCodexTokens":recentTotals.x,"recentClaudeTokens":recentTotals.y,"claudeRiverShare":recentVisual.z,"composition":overviewLayout ? "task-families":"unified", "leadProvider":shown.first?.provider.rawValue ?? "", "leadCount":nodes.filter{$0.visual.y>0.5}.count, "handoffAge":handoffAge, "dualProvider":dualProvider,"codexWork":providerDrive.x,"codexTokens":providerDrive.y,"claudeWork":providerDrive.z,"claudeTokens":providerDrive.w,"codexFlowClock":providerClocks.x,"claudeFlowClock":providerClocks.y,"focusID": shown.first?.id ?? "", "visibleTasks": shown.count, "records": tasks.count,
          "links": links.count, "workDrive": workDrive, "tokenDrive": tokenDrive,
          "flowRate": 0.035 + workDrive * 0.34 + tokenDrive * 0.28,
          "receivedEvents": receivedEvents, "receivedTokens": receivedTokens,

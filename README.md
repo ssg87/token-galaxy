@@ -13,6 +13,7 @@ A small native macOS orb that turns local AI work into a living star field.
 ## What it does
 
 - Shows Codex and Claude Code sessions, main tasks and subagents in a floating orb and a filterable task overview.
+- Expands the large overview into stable task families: one larger nebula per root, with its own child tasks around it. All currently read records are shown; selection does not rearrange the field. The small floating orb stays compact.
 - Animates newly observed token activity; historical totals do not replay as fresh work.
 - Keeps source totals separate and displays only discovered sources. Claude appearance controls are hidden when there are no Claude records.
 - Includes a companion spirit, adjustable orb size/opacity, and independent Claude symbol sizing.
@@ -44,7 +45,7 @@ The repository includes its marketplace at `.agents/plugins/marketplace.json`. S
 
 ## Run as a standalone app
 
-A prebuilt universal app is available on the [Releases page](https://github.com/ssg87/token-galaxy/releases). It contains Intel and Apple Silicon binaries; it is ad-hoc signed and not notarized. Source builds remain available below.
+The [Releases page](https://github.com/ssg87/token-galaxy/releases) currently provides the 0.7.0 universal app. The newer family overview described here is available through a source build or the Codex plugin. It contains Intel and Apple Silicon binaries; it is ad-hoc signed and not notarized. Source builds remain available below.
 
 ```sh
 git clone https://github.com/ssg87/token-galaxy.git

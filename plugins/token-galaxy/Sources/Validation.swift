@@ -11,6 +11,7 @@ func runVisualChecks() throws {
     try runTokenSurgeRotationChecks()
     try runOverviewStateChecks()
     try runVisibleIdleChecks()
+    try runFamilyOverviewChecks()
     try runUnifiedFocusChecks();try runRecentRiverChecks()
     let scales = [100, 100_000, 999_999, 1_000_000, 10_000_000].map { TokenScale.cumulative(Int64($0)) }
     try validationCheck(scales.map { $0.tier } == [0, 2, 2, 3, 4], "Token tiers do not cross the 1M boundary")
@@ -302,4 +303,29 @@ func runVisibleIdleChecks() throws {
     m.update([p,c],deltas:[p.id:100_000,c.id:100_000],events:[:]);m.step(0.1)
     try validationCheck(abs(m.displayRotationRate(for:p.id)-m.rotationRate(for:p.id))<0.0001 && abs(m.displayRotationRate(for:c.id)-m.rotationRate(for:c.id))<0.0001,"Idle display lift altered token surge speed")
     print("PASS: visible slow idle for main and satellite, actual angles advance, no fake activity or changes to surge speed")
+}
+
+func runFamilyOverviewChecks() throws {
+    var tasks=[TaskUsage]()
+    for i in 0..<33 {tasks.append(TaskUsage(id:"main-\(i)",title:"fixture",project:"fixture",total:Int64(100_000*(i+1)),input:nil,cached:nil,output:nil,source:"fixture"))}
+    for i in 0..<127 {var t=TaskUsage(id:"child-\(i)",title:"fixture",project:"fixture",total:1000,input:nil,cached:nil,output:nil,source:"fixture");t.parentID="main-\(i%33)";tasks.append(t)}
+    let compact=GalaxyModel();compact.update(tasks,deltas:[:],events:[:]);try validationCheck(compact.nodes.count<=18,"Overview expansion changed the compact orb")
+    let model=GalaxyModel();model.overviewLayout=true;model.setOverviewViewport(SIMD2(1080,370));model.update(tasks,deltas:[:],events:[:]);model.step(0.1)
+    try validationCheck(model.nodes.count==160 && model.overviewRoots.count==33 && model.links.count==127,"Overview omitted task families or relationships")
+    try validationCheck(model.nodes.count*MemoryLayout<GalaxyGPU>.stride>4096 && model.links.count*MemoryLayout<LinkGPU>.stride>4096,"Large-buffer fixture is too small")
+    let ids=model.shown.map{$0.id},positions=model.nodes.map{$0.space}
+    model.selected="main-17";model.update(Array(tasks.reversed()),deltas:[:],events:[:])
+    try validationCheck(model.shown.map{$0.id}==ids && model.nodes.map{$0.space}==positions,"Selection/refresh rearranged family cells")
+    for t in model.shown {
+        guard let i=model.shown.firstIndex(where:{$0.id==t.id}) else{continue}
+        let node=model.nodes[i]
+        try validationCheck(abs(node.space.x)<1 && abs(node.space.y)<1,"Family center lies outside overview")
+        if let parent=t.parentID,let p=model.shown.firstIndex(where:{$0.id==parent}){try validationCheck(model.nodes[p].space.w>node.space.w*2,"Main task lost size hierarchy")}
+    }
+    model.setOverviewViewport(SIMD2(760,280));try validationCheck(model.nodes.count==160,"Narrow overview lost records")
+    var dense=tasks.filter{$0.id=="main-0" || $0.parentID != nil};for i in dense.indices where dense[i].parentID != nil{dense[i].parentID="main-0"}
+    model.update(dense,deltas:[:],events:[:]);try validationCheck(model.nodes.count==128 && model.links.count==127,"Dense family lost children")
+    var a=tasks[0],b=tasks[1];a.parentID=b.id;b.parentID=a.id
+    model.update([a,b],deltas:[:],events:[:]);try validationCheck(model.nodes.count==2 && model.overviewRoots.count==1,"Cyclic ancestry did not terminate")
+    print("PASS: 33 families/160 nodes, >4KB GPU payloads, stable selection/refresh, compact orb unchanged, narrow/dense/cyclic cases")
 }

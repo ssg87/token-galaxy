@@ -188,16 +188,32 @@ extension AppController {
         p.lifecycle="task_started";p.lastEventAt=now;p.events=[WorkEvent(id:"p",at:now,phase:.spawn)]
         var c=TaskUsage(id:"demo-child",title:"子代理 · 生成回复",project:"合成演示",total:100_000,input:nil,cached:nil,output:nil,source:"fixture")
         c.parentID=p.id;c.lifecycle="task_started";c.lastEventAt=now;c.events=[WorkEvent(id:"c",at:now,phase:.reply)]
-        let v=OverviewController();v.update([p,c],observed:[:],increments:[:]);v.show()
+        var samples=[p,c]
+        for i in 1..<33 {
+            var t=TaskUsage(id:"demo-root-\(i)",title:"\(i%3==0 ? "Claude":"Codex") 任务 \(i+1)",project:"合成演示",total:Int64((i+1)*100_000),input:nil,cached:nil,output:nil,source:"fixture")
+            if i%3==0{t.provider = .claude};t.lifecycle="task_complete";samples.append(t)
+        }
+        for i in 1..<127 {
+            let group=i%33;var t=TaskUsage(id:"demo-satellite-\(i)",title:"子任务 \(i+1)",project:"合成演示",total:Int64(1000*(i+1)),input:nil,cached:nil,output:nil,source:"fixture")
+            t.parentID=group==0 ? p.id:"demo-root-\(group)";t.provider=group%3==0 && group != 0 ? .claude:.codex;t.lifecycle="task_complete";samples.append(t)
+        }
+        let v=OverviewController();v.update(samples,observed:[:],increments:[:]);v.show()
         RunLoop.current.run(until:Date(timeIntervalSinceNow:0.6))
         let first=v.field.diagnostics()["frames"] ?? 0,phase=v.field.model.nodes[0].motion.x
-        for _ in 0..<6 {v.update([p,c],observed:[:],increments:[:]);RunLoop.current.run(until:Date(timeIntervalSinceNow:0.15))}
+        for _ in 0..<6 {v.update(samples,observed:[:],increments:[:]);RunLoop.current.run(until:Date(timeIntervalSinceNow:0.15))}
         let second=v.field.diagnostics()["frames"] ?? 0
         try validationCheck(second>first+3 && v.field.model.nodes[0].motion.x>phase && !v.field.paused,"Visible overview stopped during refresh")
         try validationCheck(v.field.model.rotationRate(for:c.id)>0.239,"Overview child lost live state")
+        try validationCheck(v.field.model.nodes.count==160 && v.field.model.overviewRoots.count==33,"Native overview lost families")
+        let other="demo-root-17";guard let index=v.field.model.shown.firstIndex(where:{$0.id==other}) else{throw NSError(domain:"Overview",code:1)}
+        let n=v.field.model.nodes[index],b=v.field.bounds,point=NSPoint(x:b.width/2+CGFloat(n.space.x)*b.width/2,y:b.height/2-CGFloat(n.space.y)*b.height/2)
+        try validationCheck(v.field.taskID(at:point)==other,"Multi-family hit testing missed task")
+        v.field.onSelect?(other);v.update(samples,observed:[:],increments:[:]);try validationCheck((v.outline.item(atRow:v.outline.selectedRow) as? AgentNode)?.task.id==other,"Refresh lost selected task")
         try saveImage(v.previewImage(),dir.appendingPathComponent("overview-active.png").path)
+        v.window.setContentSize(NSSize(width:760,height:560));v.window.contentView?.layoutSubtreeIfNeeded();RunLoop.current.run(until:Date(timeIntervalSinceNow:0.2));try saveImage(v.previewImage(),dir.appendingPathComponent("overview-narrow.png").path)
+        v.window.setContentSize(NSSize(width:1080,height:740));v.window.contentView?.layoutSubtreeIfNeeded()
         v.motionPaused=true;RunLoop.current.run(until:Date(timeIntervalSinceNow:0.1));let frozen=v.field.model.nodes[0].motion.x
-        v.update([p,c],observed:[:],increments:[:]);RunLoop.current.run(until:Date(timeIntervalSinceNow:0.25))
+        v.update(samples,observed:[:],increments:[:]);RunLoop.current.run(until:Date(timeIntervalSinceNow:0.25))
         try validationCheck(v.field.paused && v.field.model.nodes[0].motion.x==frozen,"Overview ignored deliberate pause")
         v.motionPaused=false;RunLoop.current.run(until:Date(timeIntervalSinceNow:0.3));try validationCheck(v.field.model.nodes[0].motion.x>frozen,"Overview did not resume")
         v.window.performClose(nil);try validationCheck(v.field.paused,"Closed overview kept rendering")

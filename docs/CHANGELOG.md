@@ -1,5 +1,11 @@
 # Changes
 
+## 0.8.0 — 2026-09-18
+
+Give the overview an independent multi-family layout instead of the orb's 14–18-node selection. Every currently read record is represented, with a larger root nebula, nearby descendants, real immediate-parent links and root task labels. Stable family order survives selection and refresh; outline selection is restored by task ID. The field uses half the overview height and adapts to viewport size. Missing parents and cycles are bounded safely.
+
+Keep the floating orb, Touch Bar, counters, work/surge speeds and appearance controls unchanged. Overview families use their own activity rather than provider-wide Claude activity; unrelated roots no longer share the orb's clearing mask. Large GPU payloads use buffers beyond Metal's 4KB inline limit, and overview particle budgets scale separately. Coverage includes 33 roots/160 records, >4KB node/link payloads, narrow windows, dense families, cyclic ancestry, hit testing and selection after refresh.
+
 ## 0.7.5 — 2026-09-18
 
 Make idle motion perceptible at different node sizes: use a display-only rate of 0.0225 for the lead and 0.06 for small satellites. The idle lift fades out as activity rises, preserving sustained-work and token-surge speeds, accounting and automatic-focus scores. Add per-visible-node phase/rate diagnostics and overview visibility/minimization flags to distinguish imperceptible motion from a hidden/paused window. Checks verify actual phase advancement, no fabricated activity and unchanged surge speed.

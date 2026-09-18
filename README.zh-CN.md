@@ -13,6 +13,7 @@
 ## 能看到什么
 
 - 本地主对话、代理和子代理，以及它们的累计 token 和观测新增。
+- 大窗口按任务分组：每个主任务是一团较大的星云，子任务围绕所属任务显示；当前读取范围内的记录全部进入总览，选中任务不打乱位置。小悬浮球保持紧凑布局。
 - 新增 token 驱动星河变化，打开应用时不会把历史量伪装成正在生成。
 - Codex 和 Claude 分来源显示；未发现 Claude 会话时隐藏 Claude 图标设置。
 - 星灵陪伴、球体大小和透明度设置，Claude 图标可独立调整大小。
@@ -40,7 +41,7 @@ codex plugin add token-galaxy@token-galaxy
 
 ## 作为独立 Mac 应用运行
 
-可从 [Releases](https://github.com/ssg87/token-galaxy/releases) 下载 Intel / Apple Silicon 通用应用包。它使用本地临时签名，尚未进行 Apple 公证；也可按下面步骤自行编译。
+[Releases](https://github.com/ssg87/token-galaxy/releases) 当前提供的是 0.7.0 的 Intel / Apple Silicon 通用应用包；本页新增的任务星云总览请通过源码或 Codex 插件构建使用。它使用本地临时签名，尚未进行 Apple 公证；也可按下面步骤自行编译。
 
 ```sh
 git clone https://github.com/ssg87/token-galaxy.git

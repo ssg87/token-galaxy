@@ -23,7 +23,7 @@ final class OverviewController:NSObject,NSOutlineViewDataSource,NSOutlineViewDel
         let reset=NSButton(title:"全部项目",target:self,action:#selector(resetFilter));reset.translatesAutoresizingMaskIntoConstraints=false;root.addSubview(reset)
         summary.font=NSFont.systemFont(ofSize:12);summary.textColor = .secondaryLabelColor;summary.translatesAutoresizingMaskIntoConstraints=false;root.addSubview(summary)
         field.translatesAutoresizingMaskIntoConstraints=false;field.onSelect={[weak self] id in guard let self=self,let node=self.nodes[id] else{return};var ancestors=[AgentNode](),p=node.task.parentID,seen=Set<String>();while let key=p,let parent=self.nodes[key],!seen.contains(key){seen.insert(key);ancestors.append(parent);p=parent.task.parentID};for parent in ancestors.reversed(){self.outline.expandItem(parent)};let row=self.outline.row(forItem:node);if row>=0{self.outline.selectRowIndexes(IndexSet(integer:row),byExtendingSelection:false);self.outline.scrollRowToVisible(row)}};root.addSubview(field)
-        let scroll=NSScrollView();scroll.hasVerticalScroller=true;scroll.autohidesScrollers=true;scroll.translatesAutoresizingMaskIntoConstraints=false;scroll.drawsBackground=false;root.addSubview(scroll)
+        let scroll=NSScrollView();scroll.hasVerticalScroller=true;scroll.hasHorizontalScroller=true;scroll.autohidesScrollers=true;scroll.translatesAutoresizingMaskIntoConstraints=false;scroll.drawsBackground=false;root.addSubview(scroll)
         let columns:[(String,String,CGFloat)]=[("name","任务 / 代理 / 子代理",380),("provider","来源",100),("status","活动状态",100),("tokens","本地累计 Tokens",120),("delta","本次观测新增",120)]
         for (id,title,w) in columns{let c=NSTableColumn(identifier:.init(id));c.title=title;c.width=w;c.minWidth=75;outline.addTableColumn(c)}
         outline.outlineTableColumn=outline.tableColumns.first;outline.rowHeight=32;outline.indentationPerLevel=19;outline.delegate=self;outline.dataSource=self;outline.backgroundColor = .clear;outline.usesAlternatingRowBackgroundColors=true;outline.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle;scroll.documentView=outline
@@ -31,7 +31,7 @@ final class OverviewController:NSObject,NSOutlineViewDataSource,NSOutlineViewDel
         providerWidth=provider.widthAnchor.constraint(equalToConstant:0)
         NSLayoutConstraint.activate([
             project.leadingAnchor.constraint(equalTo:root.leadingAnchor,constant:18),project.topAnchor.constraint(equalTo:root.topAnchor,constant:14),project.widthAnchor.constraint(equalToConstant:210),provider.leadingAnchor.constraint(equalTo:project.trailingAnchor,constant:10),providerWidth!,provider.centerYAnchor.constraint(equalTo:project.centerYAnchor),reset.leadingAnchor.constraint(equalTo:provider.trailingAnchor,constant:10),reset.centerYAnchor.constraint(equalTo:project.centerYAnchor),summary.trailingAnchor.constraint(equalTo:root.trailingAnchor,constant:-18),summary.centerYAnchor.constraint(equalTo:project.centerYAnchor),
-            field.topAnchor.constraint(equalTo:project.bottomAnchor,constant:12),field.leadingAnchor.constraint(equalTo:root.leadingAnchor),field.trailingAnchor.constraint(equalTo:root.trailingAnchor),field.heightAnchor.constraint(equalTo:root.heightAnchor,multiplier:0.34),
+            field.topAnchor.constraint(equalTo:project.bottomAnchor,constant:12),field.leadingAnchor.constraint(equalTo:root.leadingAnchor),field.trailingAnchor.constraint(equalTo:root.trailingAnchor),field.heightAnchor.constraint(equalTo:root.heightAnchor,multiplier:0.50),
             scroll.topAnchor.constraint(equalTo:field.bottomAnchor,constant:8),scroll.leadingAnchor.constraint(equalTo:root.leadingAnchor,constant:14),scroll.trailingAnchor.constraint(equalTo:root.trailingAnchor,constant:-14),scroll.bottomAnchor.constraint(equalTo:note.topAnchor,constant:-10),note.leadingAnchor.constraint(equalTo:root.leadingAnchor,constant:18),note.trailingAnchor.constraint(lessThanOrEqualTo:root.trailingAnchor,constant:-18),note.bottomAnchor.constraint(equalTo:root.bottomAnchor,constant:-12)
         ]);window.center()
     }
@@ -56,6 +56,7 @@ final class OverviewController:NSObject,NSOutlineViewDataSource,NSOutlineViewDel
         reload(increments:increments,events:events)
     }
     private func reload(increments:[String:Int64]=[:],events:[String:[WorkEvent]]=[:]){
+        let selectedID=field.selected ?? (outline.selectedRow>=0 ? (outline.item(atRow:outline.selectedRow) as? AgentNode)?.task.id:nil)
         let shown=records.filter{(filter.isEmpty || $0.projectPath==filter) && ((provider.selectedItem?.representedObject as? String ?? "").isEmpty || $0.provider.rawValue == (provider.selectedItem?.representedObject as? String ?? ""))};field.update(shown,deltas:increments,events:events);field.paused = motionPaused || !window.isVisible || window.isMiniaturized
         summary.stringValue="\(shown.count) 条记录   ·   \(shown.filter{$0.isWorking}.count) 工作中   ·   \(shown.filter{$0.parentID != nil}.count) 子代理"
         let key=shown.map{$0.id+":"+($0.parentID ?? "")}.sorted().joined(separator:"|");updating=true
@@ -66,6 +67,11 @@ final class OverviewController:NSObject,NSOutlineViewDataSource,NSOutlineViewDel
             }
             outline.reloadData();outline.expandItem(nil,expandChildren:true)
         }else{for t in shown{nodes[t.id]?.task=t};outline.reloadData()}
+        if let id=selectedID,let node=nodes[id] {
+            var p=node.task.parentID,seen=Set<String>()
+            while let key=p,let parent=nodes[key],!seen.contains(key){seen.insert(key);outline.expandItem(parent);p=parent.task.parentID}
+            let row=outline.row(forItem:node);if row>=0{outline.selectRowIndexes(IndexSet(integer:row),byExtendingSelection:false)}
+        }
         updating=false
     }
     func previewImage()->NSImage?{

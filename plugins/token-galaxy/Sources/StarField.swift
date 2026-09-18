@@ -7,6 +7,7 @@ final class ClearMetalView: MTKView {
     override var isOpaque: Bool { false }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
+final class OverviewTaskLabel:NSTextField {override func hitTest(_ point:NSPoint)->NSView?{nil}}
 final class StarField: NSView, MTKViewDelegate {
     let model = GalaxyModel()
     let pet = SpiritModel()
@@ -18,13 +19,14 @@ final class StarField: NSView, MTKViewDelegate {
     var onResize: ((CGFloat) -> Void)?
     var onInteraction: (() -> Void)?
     var isStrip = false
-    var isOverview = false {didSet{configureFrameDriver()}}
+    var isOverview = false {didSet{model.overviewLayout=isOverview;configureFrameDriver();updateOverviewLabels()}}
     var paused = false { didSet { guard paused != oldValue else{return}; lastFrame=0; metal?.isPaused=isOverview || paused; metal?.draw() } }
-    var selected: String? { didSet { model.selected = selected } }
+    var selected: String? { didSet { model.selected = selected;updateOverviewLabels() } }
     var claudeLogoScale:Float = { let v=UserDefaults.standard.double(forKey:"claudeLogoScale");return v>0 ? Float(min(1.6,max(0.8,v))):1.4 }()
     private var resizeSteps=OrbResizeSteps()
     var animateAmbient = true
     var stale = false { didSet { model.stale = stale } }
+    private var overviewLabels=[String:OverviewTaskLabel]()
     private var overviewTimer:Timer?
     private var metal: ClearMetalView?
     private var queue: MTLCommandQueue?
@@ -52,6 +54,26 @@ final class StarField: NSView, MTKViewDelegate {
         setAccessibilityLabel("实时星河，点击查看任务，右键查看用量映射和代理总览")
     }
     required init?(coder: NSCoder) { fatalError() }
+    override func layout(){
+        super.layout()
+        if isOverview {model.setOverviewViewport(SIMD2(Float(bounds.width),Float(bounds.height)));updateOverviewLabels()}
+    }
+    private func updateOverviewLabels(){
+        guard isOverview else{return}
+        let roots=model.overviewRoots
+        for id in Array(overviewLabels.keys) where !roots.contains(id){overviewLabels.removeValue(forKey:id)?.removeFromSuperview()}
+        for id in roots {
+            guard let rect=model.overviewLabelRects[id],let task=model.shown.first(where:{$0.id==id}) else{continue}
+            let label=overviewLabels[id] ?? OverviewTaskLabel(labelWithString:"")
+            if overviewLabels[id]==nil{label.alignment = .center;label.lineBreakMode = .byTruncatingTail;addSubview(label);overviewLabels[id]=label}
+            label.frame=NSRect(x:CGFloat(rect.x),y:CGFloat(rect.y),width:CGFloat(rect.z),height:CGFloat(rect.w))
+            label.font=NSFont.systemFont(ofSize:min(11,max(9,CGFloat(rect.z)/11)),weight:.medium)
+            label.stringValue=task.label
+            label.textColor=model.overviewFamilies[selected ?? ""]==id ? .systemMint:.secondaryLabelColor
+            let children=model.overviewFamilies.values.filter{$0==id}.count-1
+            label.toolTip="\(task.label)\n\(task.provider.label) · \(children) 个子任务"
+        }
+    }
     deinit {overviewTimer?.invalidate()}
     private func configureFrameDriver(){
         overviewTimer?.invalidate();overviewTimer=nil
@@ -104,7 +126,7 @@ final class StarField: NSView, MTKViewDelegate {
         lastUpdateWall = now
         tasks = items; var incoming = events
         for id in messageEvents { incoming[id, default: []].append(WorkEvent(id: "message-\(updates)-\(id)", at: Date().timeIntervalSince1970, phase: .input)) }
-        model.update(items, deltas: deltas, events: incoming); pet.update(items,events:incoming,deltas:deltas,at:model.clock); updates += 1
+        model.update(items, deltas: deltas, events: incoming);updateOverviewLabels(); pet.update(items,events:incoming,deltas:deltas,at:model.clock); updates += 1
     }
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
     private func encode(_ pass: MTLRenderPassDescriptor, _ command: MTLCommandBuffer, _ size: CGSize) {
@@ -125,7 +147,7 @@ final class StarField: NSView, MTKViewDelegate {
             var nodes = model.nodes
             let resolution = isStrip ? Float(0.22) : min(1.35, max(0.38, Float(min(size.width, size.height)) / 440))
             for i in nodes.indices { if nodes[i].brand.x<0.5{nodes[i].visual.z = max(32, (nodes[i].visual.z * resolution).rounded())} }
-            nodes.withUnsafeBytes { if let base = $0.baseAddress { encoder.setVertexBytes(base, length: $0.count, index: 0) } }
+            nodes.withUnsafeBytes { if let base = $0.baseAddress { if $0.count<=4096{encoder.setVertexBytes(base,length:$0.count,index:0)}else if let buffer=metal?.device?.makeBuffer(bytes:base,length:$0.count,options:.storageModeShared){encoder.setVertexBuffer(buffer,offset:0,index:0)} } }
             if !isStrip {
                 encoder.setRenderPipelineState(body); encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: nodes.count)
                 encoder.setRenderPipelineState(stars)
@@ -137,7 +159,7 @@ final class StarField: NSView, MTKViewDelegate {
             encoder.setRenderPipelineState(mark)
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 768 /* Claude Building contour */, instanceCount: nodes.count)
             if !model.links.isEmpty {
-                model.links.withUnsafeBytes { if let base = $0.baseAddress { encoder.setVertexBytes(base, length: $0.count, index: 2) } }
+                model.links.withUnsafeBytes { if let base = $0.baseAddress { if $0.count<=4096{encoder.setVertexBytes(base,length:$0.count,index:2)}else if let buffer=metal?.device?.makeBuffer(bytes:base,length:$0.count,options:.storageModeShared){encoder.setVertexBuffer(buffer,offset:0,index:2)} } }
                 encoder.setRenderPipelineState(chains)
                 encoder.drawPrimitives(type: .point, vertexStart: 0, vertexCount: model.links.count * 72)
             }
@@ -193,10 +215,22 @@ final class StarField: NSView, MTKViewDelegate {
         guard let c = CGContext(data: &pixels, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
                                 space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue),
               let cg = c.makeImage() else { return nil }
-        return NSImage(cgImage: cg, size: s)
+        let image=NSImage(cgImage:cg,size:s)
+        guard isOverview,!overviewLabels.isEmpty else{return image}
+        let composed=NSImage(size:s);composed.lockFocusFlipped(true)
+        image.draw(in:NSRect(origin:.zero,size:s))
+        let sx=s.width/max(1,bounds.width),sy=s.height/max(1,bounds.height)
+        for label in overviewLabels.values {
+            let style=NSMutableParagraphStyle();style.alignment = .center;style.lineBreakMode = .byTruncatingTail
+            let frame=label.frame,rect=NSRect(x:frame.minX*sx,y:frame.minY*sy,width:frame.width*sx,height:frame.height*sy)
+            let font=NSFont.systemFont(ofSize:(label.font?.pointSize ?? 10)*sy,weight:.medium)
+            label.stringValue.draw(in:rect,withAttributes:[.font:font,.foregroundColor:label.textColor ?? NSColor.secondaryLabelColor,.paragraphStyle:style])
+        }
+        composed.unlockFocus();return composed
     }
     func taskID(at point: NSPoint) -> String? {
         guard !model.nodes.isEmpty else { return nil }
+        if isOverview,let label=overviewLabels.first(where:{$0.value.frame.contains(point)}){return label.key}
         let m = min(bounds.width, bounds.height)
         let candidates = model.nodes.enumerated().map { i, node -> (Int, CGFloat) in
             let perspective = 1 / (1 - node.space.z * 0.20)

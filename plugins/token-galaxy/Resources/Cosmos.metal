@@ -15,7 +15,7 @@ float2 project(float3 p,Scene u) {
  return xy;
 }
 float clearing(float2 pixel,Scene u) {
- if(u.focus.w<.005 || int(u.viewport.w)==1)return 1.;
+ if(u.focus.w<.005 || int(u.viewport.w)!=0)return 1.;
  float2 q=pixel/u.viewport.xy*2.-1.;q.y=-q.y;
  float2 delta=q-project(u.focus.xyz,u);
  if(int(u.viewport.w)==0)delta*=u.viewport.xy/min(u.viewport.x,u.viewport.y);
@@ -32,13 +32,14 @@ float3 disk(float radius,float angle,float depth,float seed) {
 // These are visual transforms only; they never write counters or focus ranking.
 float claudeUse(Galaxy a,Scene u) {
  float own=a.motion.y*.22+a.motion.w*.40;
+ if(int(u.viewport.w)==2)return clamp(own,0.,1.);
  float source=u.channels.z*.22+u.channels.w*.40+u.recent.y*.62;
  return clamp(a.visual.y>.5 ? max(own,source):own+u.recent.y*.10,0.,1.);
 }
 float claudeClock(Galaxy a,Scene u) {
  if(u.settings.w>.5)return a.visual.w*4.;
  // Integrated clocks keep speed changes continuous instead of multiplying wall time by activity.
- float t=(u.viewport.z*.28+a.motion.x*.72+u.clocks.y*.55)*(.78+a.visual.w*.32)+a.visual.w*4.;
+ float t=(u.viewport.z*.28+a.motion.x*.72+(int(u.viewport.w)==2 ? 0.:u.clocks.y*.55))*(.78+a.visual.w*.32)+a.visual.w*4.;
  return t+.09*sin(t*.47+a.visual.w*9.);
 }
 // Display-only pet pose. Touch Bar and non-pet surfaces keep their exact geometry.
@@ -68,7 +69,7 @@ fragment float4 bodyFragment(Body in [[stage_in]],constant Scene &u [[buffer(1)]
  if(in.brand.x>.5){
   float2 q=in.uv;float r=length(q);if(r>1.)discard_fragment();
   float energy=min(1.6,in.mood.y+in.mood.z*.65);
-  if(in.properties.y>.5)energy=max(energy,min(1.6,u.channels.z+u.channels.w*.65));
+  if(in.properties.y>.5 && int(u.viewport.w)!=2)energy=max(energy,min(1.6,u.channels.z+u.channels.w*.65));
   float activity=in.brand.w;
   float phase=u.viewport.z*(u.settings.w>.5 ? 0.:.11)+in.mood.x*.17;
   float2 drift=float2(phase*.16,-phase*.10);
@@ -162,6 +163,7 @@ vertex Dot starVertex(uint id [[vertex_id]],uint group [[instance_id]],constant 
  float size=(1.08+pow(h,10.)*2.0)*near;
  if(id<5){size=3.8+a.visual.x*.80+energy*1.4;bright=1.2+energy*.5;}
  if(a.visual.y<.5){bright*=.60+energy*.78;size*=.92;}
+ if(int(u.viewport.w)==2 && a.brand.w>.5){bright*=1.25;size*=1.12;}
  Dot o;o.position=float4(project(p,u),0,1);o.size=int(u.viewport.w)==1 ? min(size,3.+a.visual.x*.3+energy*.3):clamp(size,0.65,5.5);
  float3 color=mix(mix(silver(.12),float3(1.,1.,1.),h),float3(1.,.80,.47),pet.z*(id<5 ? 1.:.10));bright*=1.+pet.y;
  float2 pixel=project(p,u)*float2(.5,-.5)*u.viewport.xy+u.viewport.xy*.5;
@@ -256,7 +258,7 @@ vertex Mark markVertex(uint id [[vertex_id]], uint group [[instance_id]], consta
  if(int(u.viewport.w)==2)p.x=a.space.x+q.x*a.space.w*u.viewport.y/u.viewport.x;
  if(int(u.viewport.w)==1)p=a.space.xyz+float3(q*float2(a.visual.y>.5 ? .038:.016,a.visual.y>.5 ? .70:.28),0.);
  float energy=min(1.6,a.motion.y+a.motion.w*.65);
- if(a.visual.y>.5)energy=max(energy,min(1.6,u.channels.z+u.channels.w*.65));
+ if(a.visual.y>.5 && int(u.viewport.w)!=2)energy=max(energy,min(1.6,u.channels.z+u.channels.w*.65));
  float angle=atan2(local.y,local.x);
  float shimmer=1.;
  float alpha=(a.visual.y>.5 ? .98:.80)*shimmer*(a.brand.y>.5 || u.settings.x>.5 ? .3:1.);
