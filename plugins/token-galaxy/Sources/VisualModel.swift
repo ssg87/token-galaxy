@@ -116,6 +116,16 @@ final class GalaxyModel {
         return idleRotationRate + (0.045 - idleRotationRate) * activeBlend + n.workEnergy * 0.75 + tokenRotation
     }
     func rotationRate(for id: String) -> Float { state[id].map { rotationRate($0) } ?? idleRotationRate }
+    private func displayRotationRate(_ n:NodeMotion,isLead:Bool)->Float {
+        // Small satellites need more angular travel to show motion at a few pixels.
+        // This display-only idle lift adds no activity, tokens or focus score.
+        let blend=min(1,max(n.workEnergy,n.tokenEnergy)/0.26)
+        return rotationRate(n)+(isLead ? 0.01125:0.04875)*(1-blend)
+    }
+    func displayRotationRate(for id:String)->Float {
+        state[id].map{displayRotationRate($0,isLead:id==shown.first?.id)} ?? 0.0225
+    }
+
     func fastestConversation(keeping current: String?) -> String? {
         let candidates = tasks.filter { $0.isMainConversation && $0.readIssue == nil && $0.pendingBytes == 0 }
         let ranked = candidates.sorted {
@@ -253,7 +263,7 @@ final class GalaxyModel {
             n.workEnergy += (workTarget - n.workEnergy) * min(1, dt * (workTarget > n.workEnergy ? 26 : 5))
             n.tokenEnergy += (tokenTarget - n.tokenEnergy) * min(1, dt * (tokenTarget > n.tokenEnergy ? 26 : 5))
             if !reduceMotion {
-                n.phase += dt * rotationRate(n)
+                n.phase += dt * displayRotationRate(n,isLead:task.id==shown.first?.id)
                 n.position += (n.target - n.position) * min(1, dt * 4)
             }
             let isLead = task.id == shown.first?.id
@@ -321,6 +331,8 @@ final class GalaxyModel {
          "receivedEvents": receivedEvents, "receivedTokens": receivedTokens,
          "leadTier": nodes.first?.visual.x ?? 0, "leadRadius": nodes.first?.space.w ?? 0,
          "leadRotationRate": shown.first.map { rotationRate(for: $0.id) } ?? idleRotationRate,
+         "leadDisplayRotationRate":shown.first.map{displayRotationRate(for:$0.id)} ?? 0.0225,
+         "visibleMotion":nodes.enumerated().map{ i,n -> [String:Any] in ["index":i,"phase":n.motion.x,"displayRate":displayRotationRate(for:shown[i].id),"work":n.motion.y,"tokens":n.motion.w]},
          "eventPhases": shown.compactMap { state[$0.id]?.workPhase.label }]
     }
 }

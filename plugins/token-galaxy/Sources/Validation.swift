@@ -10,6 +10,7 @@ func runVisualChecks() throws {
     try runSustainedRotationChecks()
     try runTokenSurgeRotationChecks()
     try runOverviewStateChecks()
+    try runVisibleIdleChecks()
     try runUnifiedFocusChecks();try runRecentRiverChecks()
     let scales = [100, 100_000, 999_999, 1_000_000, 10_000_000].map { TokenScale.cumulative(Int64($0)) }
     try validationCheck(scales.map { $0.tier } == [0, 2, 2, 3, 4], "Token tiers do not cross the 1M boundary")
@@ -287,4 +288,18 @@ func runOverviewStateChecks() throws {
     let idle=GalaxyModel();idle.update([parent,child],deltas:[:],events:[:]);idle.step(0.1)
     try validationCheck(abs(idle.rotationRate(for:parent.id)-0.01125)<0.0001,"Completed task looked active when reopening")
     print("PASS: new views restore current parent/child activity without replay; reply/dispatch direction follows known edges; completed tasks stay idle")
+}
+
+func runVisibleIdleChecks() throws {
+    let p=TaskUsage(id:"visible-idle",title:"fixture",project:"fixture",total:1_000_000,input:nil,cached:nil,output:nil,source:"fixture")
+    var c=TaskUsage(id:"visible-small",title:"fixture",project:"fixture",total:100_000,input:nil,cached:nil,output:nil,source:"fixture");c.parentID=p.id
+    let m=GalaxyModel();m.selected=p.id;m.update([p,c],deltas:[:],events:[:]);m.step(0.1)
+    let before=m.nodes.map{$0.motion.x}
+    for _ in 0..<60 {m.step(1.0/30)}
+    try validationCheck(abs(m.displayRotationRate(for:p.id)-0.0225)<0.0001 && abs(m.displayRotationRate(for:c.id)-0.06)<0.0001,"Idle display tiers changed")
+    try validationCheck(m.nodes[0].motion.x-before[0]>0.044 && m.nodes[1].motion.x-before[1]>0.119,"Idle phases did not advance on both nodes")
+    try validationCheck(m.fastestConversation(keeping:nil)==nil && m.evidence()["receivedTokens"] as? Int64 == 0,"Visible idle fabricated activity")
+    m.update([p,c],deltas:[p.id:100_000,c.id:100_000],events:[:]);m.step(0.1)
+    try validationCheck(abs(m.displayRotationRate(for:p.id)-m.rotationRate(for:p.id))<0.0001 && abs(m.displayRotationRate(for:c.id)-m.rotationRate(for:c.id))<0.0001,"Idle display lift altered token surge speed")
+    print("PASS: visible slow idle for main and satellite, actual angles advance, no fake activity or changes to surge speed")
 }

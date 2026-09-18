@@ -1,5 +1,9 @@
 # Changes
 
+## 0.7.5 — 2026-09-18
+
+Make idle motion perceptible at different node sizes: use a display-only rate of 0.0225 for the lead and 0.06 for small satellites. The idle lift fades out as activity rises, preserving sustained-work and token-surge speeds, accounting and automatic-focus scores. Add per-visible-node phase/rate diagnostics and overview visibility/minimization flags to distinguish imperceptible motion from a hidden/paused window. Checks verify actual phase advancement, no fabricated activity and unchanged surge speed.
+
 ## 0.7.4 — 2026-09-18
 
 Restore current working states when a new overview/renderer opens, without replaying historical tokens or events. Synchronize overview selection with the orb, verify overview pause/resume, and avoid resetting the Metal pause state during every data refresh. Give the overview a visibility-gated common-run-loop frame driver so reopening does not depend on MTKView restarting its automatic display link. Include overview frame/pause diagnostics in the local status snapshot.

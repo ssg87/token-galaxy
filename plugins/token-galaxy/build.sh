@@ -15,8 +15,8 @@ cat > "$OUT/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>TokenGalaxy</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleVersion</key><string>27</string>
-<key>CFBundleShortVersionString</key><string>0.7.4</string>
+<key>CFBundleVersion</key><string>28</string>
+<key>CFBundleShortVersionString</key><string>0.7.5</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>
