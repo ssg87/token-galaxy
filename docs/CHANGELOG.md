@@ -1,5 +1,11 @@
 # Changes
 
+## 0.8.2 — 2026-09-19
+
+Bring overview children into a compact, flattened cluster around the parent nebula. Scale link curvature to the actual parent-child distance instead of using the compact orb’s large fixed arc; keep observed activity packets and remove idle overview packets. The orb and Touch Bar retain their geometry.
+
+Reveal a single task name only after an explicit nebula/outline selection. Hovering, working state and automatic focus no longer reveal names. A child click shows that child’s name; empty-space clicks dismiss it, and off-target clicks no longer select the nearest distant task. Native checks cover hidden working/automatic names, explicit child disclosure, refresh preservation and dismissal.
+
 ## 0.8.1 — 2026-09-19
 
 Replace the overview grid with a seeded, organic universe: varied larger task nebulae, their orbiting children and a shared diffuse background drift slowly together. Ordinary refresh and selection keep the layout stable; the new “重排宇宙” button smoothly changes its arrangement without changing selection, filters, counters or activity. Labels follow rendered positions and appear for selected, working or pointed-at families. The universe occupies 56% of the window.

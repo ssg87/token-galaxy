@@ -13,7 +13,7 @@ A small native macOS orb that turns local AI work into a living star field.
 ## What it does
 
 - Shows Codex and Claude Code sessions, main tasks and subagents in a floating orb and a filterable task overview.
-- Shows one slowly drifting universe in the large overview, with naturally scattered larger nebulae for main tasks and their own child tasks around them. All currently read records are shown. Selection and refresh keep the arrangement stable; “重排宇宙” reshuffles it smoothly. Names appear for selected, working or hovered families. The small floating orb stays compact.
+- Shows one slowly drifting universe in the large overview, with naturally scattered larger nebulae for main tasks and their own child tasks around them. All currently read records are shown. Selection and refresh keep the arrangement stable; “重排宇宙” reshuffles it smoothly. Task names appear only after clicking a nebula or task row; hovering and automatic focus stay quiet. Children sit close to their parent nebula, with short relationship links. The small floating orb stays compact.
 - Animates newly observed token activity; historical totals do not replay as fresh work.
 - Keeps source totals separate and displays only discovered sources. Claude appearance controls are hidden when there are no Claude records.
 - Includes a companion spirit, adjustable orb size/opacity, and independent Claude symbol sizing.

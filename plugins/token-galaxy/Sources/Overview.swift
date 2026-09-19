@@ -95,5 +95,5 @@ final class OverviewController:NSObject,NSOutlineViewDataSource,NSOutlineViewDel
         default:label.stringValue="+"+compactTokens(deltas[t.id] ?? 0);label.textColor = .systemTeal
         };return label
     }
-    func outlineViewSelectionDidChange(_ notification:Notification){guard !updating,outline.selectedRow>=0,let node=outline.item(atRow:outline.selectedRow) as? AgentNode else{return};field.selected=node.task.id;onSelect?(node.task.id)}
+    func outlineViewSelectionDidChange(_ notification:Notification){guard !updating,outline.selectedRow>=0,let node=outline.item(atRow:outline.selectedRow) as? AgentNode else{return};field.showOverviewName(for:node.task.id);field.selected=node.task.id;onSelect?(node.task.id)}
 }

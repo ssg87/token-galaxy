@@ -205,6 +205,15 @@ extension AppController {
         try validationCheck(second>first+3 && v.field.model.nodes[0].motion.x>phase && !v.field.paused,"Visible overview stopped during refresh")
         try validationCheck(v.field.model.rotationRate(for:c.id)>0.239,"Overview child lost live state")
         try validationCheck(v.field.model.nodes.count==160 && v.field.model.overviewRoots.count==33,"Native overview lost families")
+        try validationCheck(v.field.visibleOverviewNameCount==0,"Working tasks displayed unsolicited names")
+        v.field.selected=p.id
+        try validationCheck(v.field.visibleOverviewNameCount==0,"Automatic selection revealed a name")
+        v.field.showOverviewName(for:c.id)
+        try validationCheck(v.field.visibleOverviewNameCount==1 && v.field.revealedTaskID==c.id,"Clicked child did not reveal exactly its name")
+        v.field.selected=p.id;v.update(samples,observed:[:],increments:[:])
+        try validationCheck(v.field.revealedTaskID==c.id && v.field.visibleOverviewNameCount==1,"Refresh/automatic selection replaced clicked name")
+        v.field.showOverviewName(for:nil)
+        try validationCheck(v.field.visibleOverviewNameCount==0,"Dismissing name failed")
         let other="demo-root-17";guard let index=v.field.model.shown.firstIndex(where:{$0.id==other}) else{throw NSError(domain:"Overview",code:1)}
         let n=v.field.model.nodes[index],b=v.field.bounds,point=NSPoint(x:b.width/2+CGFloat(n.space.x)*b.width/2,y:b.height/2-CGFloat(n.space.y)*b.height/2)
         try validationCheck(v.field.taskID(at:point)==other,"Multi-family hit testing missed task")

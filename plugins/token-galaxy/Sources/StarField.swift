@@ -28,9 +28,7 @@ final class StarField: NSView, MTKViewDelegate {
     var stale = false { didSet { model.stale = stale } }
     private var overviewLabels=[String:OverviewTaskLabel]()
     private var overviewTimer:Timer?
-    private var overviewTracking:NSTrackingArea?
-    private var hoveredFamily:String?
-    private var workingFamilies=Set<String>()
+    private(set) var revealedTaskID:String?
     private var metal: ClearMetalView?
     private var queue: MTLCommandQueue?
     private var background: MTLRenderPipelineState?
@@ -64,45 +62,38 @@ final class StarField: NSView, MTKViewDelegate {
     private func updateOverviewLabels(){
         guard isOverview else{return}
         let roots=model.overviewRoots
-        workingFamilies=Set(model.shown.filter{$0.isWorking}.compactMap{model.overviewFamilies[$0.id]})
+        if let id=revealedTaskID,!model.shown.contains(where:{$0.id==id}){revealedTaskID=nil}
         for id in Array(overviewLabels.keys) where !roots.contains(id){overviewLabels.removeValue(forKey:id)?.removeFromSuperview()}
         for id in roots {
             guard let rect=model.overviewLabelRects[id],let task=model.shown.first(where:{$0.id==id}) else{continue}
             let label=overviewLabels[id] ?? OverviewTaskLabel(labelWithString:"")
             if overviewLabels[id]==nil{label.alignment = .center;label.lineBreakMode = .byTruncatingTail;addSubview(label);overviewLabels[id]=label}
             label.font=NSFont.systemFont(ofSize:min(11,max(9,CGFloat(rect.z)/11)),weight:.medium)
-            label.stringValue=task.label
+            let named=model.shown.first{$0.id==revealedTaskID && model.overviewFamilies[$0.id]==id} ?? task
+            label.stringValue=named.label
             label.textColor=model.overviewFamilies[selected ?? ""]==id ? .systemMint:.secondaryLabelColor
             let children=model.overviewFamilies.values.filter{$0==id}.count-1
-            label.toolTip="\(task.label)\n\(task.provider.label) · \(children) 个子任务"
+            label.toolTip="\(named.label)\n\(named.provider.label) · \(children) 个子任务"
         }
         updateOverviewLabelFrames()
     }
     func reshuffleOverview(){model.reshuffleOverview();updateOverviewLabels()}
     private func updateOverviewLabelFrames(){
         guard isOverview else{return}
-        let selectedFamily=model.overviewFamilies[selected ?? ""]
+        let revealedFamily=model.overviewFamilies[revealedTaskID ?? ""]
         for (index,task) in model.shown.enumerated(){
             guard index<model.nodes.count,let label=overviewLabels[task.id],let rect=model.overviewLabelRects[task.id] else{continue}
             let p=model.nodes[index].space
             let x=(1+CGFloat(p.x))*bounds.width/2+CGFloat(rect.x)
             let y=(1-CGFloat(p.y))*bounds.height/2+CGFloat(rect.y)
             label.frame=NSRect(x:max(2,min(bounds.width-CGFloat(rect.z)-2,x)),y:max(2,min(bounds.height-CGFloat(rect.w)-2,y)),width:CGFloat(rect.z),height:CGFloat(rect.w))
-            label.isHidden=task.id != selectedFamily && task.id != hoveredFamily && !workingFamilies.contains(task.id)
+            label.isHidden=task.id != revealedFamily
         }
     }
-    override func updateTrackingAreas(){
-        super.updateTrackingAreas()
-        if let old=overviewTracking{removeTrackingArea(old);overviewTracking=nil}
-        guard isOverview else{return}
-        let area=NSTrackingArea(rect:.zero,options:[.mouseMoved,.mouseEnteredAndExited,.activeAlways,.inVisibleRect],owner:self,userInfo:nil)
-        addTrackingArea(area);overviewTracking=area
+    func showOverviewName(for id:String?){
+        guard isOverview else{return};revealedTaskID=id;updateOverviewLabels()
     }
-    override func mouseMoved(with event:NSEvent){
-        guard isOverview else{return}
-        hoveredFamily=taskID(at:convert(event.locationInWindow,from:nil)).flatMap{model.overviewFamilies[$0]};updateOverviewLabelFrames()
-    }
-    override func mouseExited(with event:NSEvent){hoveredFamily=nil;updateOverviewLabelFrames()}
+    var visibleOverviewNameCount:Int{overviewLabels.values.filter{!$0.isHidden}.count}
     deinit {overviewTimer?.invalidate()}
     private func configureFrameDriver(){
         overviewTimer?.invalidate();overviewTimer=nil
@@ -261,7 +252,7 @@ final class StarField: NSView, MTKViewDelegate {
     }
     func taskID(at point: NSPoint) -> String? {
         guard !model.nodes.isEmpty else { return nil }
-        if isOverview,let label=overviewLabels.first(where:{!$0.value.isHidden && $0.value.frame.contains(point)}){return label.key}
+        if isOverview,let label=overviewLabels.first(where:{!$0.value.isHidden && $0.value.frame.contains(point)}){return revealedTaskID ?? label.key}
         let m = min(bounds.width, bounds.height)
         let candidates = model.nodes.enumerated().map { i, node -> (Int, CGFloat) in
             let perspective = 1 / (1 - node.space.z * 0.20)
@@ -269,14 +260,16 @@ final class StarField: NSView, MTKViewDelegate {
             return (i, hypot(point.x - bounds.width / 2 - x * (isOverview ? bounds.width : m) / 2,
                              point.y - bounds.height / 2 + y * (isOverview ? bounds.height : m) / 2))
         }
-        return candidates.min(by: { $0.1 < $1.1 }).map { model.shown[$0.0].id }
+        guard let nearest=candidates.min(by:{$0.1<$1.1}) else{return nil}
+        if isOverview,nearest.1>max(10,CGFloat(model.nodes[nearest.0].space.w)*bounds.height/2+6){return nil}
+        return model.shown[nearest.0].id
     }
     override func rightMouseDown(with event:NSEvent){onInteraction?();onContext?(event)}
     override func mouseDown(with event:NSEvent){
         onInteraction?()
         // Capture the identity before refreshes can reorder or move the nodes.
         let clickedID=taskID(at:convert(event.locationInWindow,from:nil))
-        if isOverview{if let id=clickedID{onSelect?(id)};return}
+        if isOverview{showOverviewName(for:clickedID);if let id=clickedID{onSelect?(id)};return}
         guard let window=window else{return};let initial=window.frame,startPoint=NSEvent.mouseLocation;var moved=false
         while let next=window.nextEvent(matching:[.leftMouseDragged,.leftMouseUp],until:.distantFuture,inMode:.eventTracking,dequeue:true){
             let now=NSEvent.mouseLocation,dx=now.x-startPoint.x,dy=now.y-startPoint.y

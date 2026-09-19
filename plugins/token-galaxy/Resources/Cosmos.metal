@@ -276,6 +276,11 @@ vertex Dot chainVertex(uint id [[vertex_id]],constant Link *links [[buffer(2)]],
  float3 a=link.source.xyz,b=link.target.xyz;bool clay=link.style.z<0.;float seed=abs(link.style.z);
  float side=b.y>=a.y ? 1.:-1.;
  float3 control=(a+b)*.5+float3((seed-.5)*.16,side*(.20+seed*.11),-.12);
+ if(int(u.viewport.w)==2){
+  float2 delta=(b.xy-a.xy)*u.viewport.xy;
+  float2 bend=float2(-delta.y,delta.x)*(.08+(seed-.5)*.06)/u.viewport.xy;
+  control=float3((a.xy+b.xy)*.5+bend,0.);
+ }
  float3 p=(1.-t)*(1.-t)*a+2.*(1.-t)*t*control+t*t*b;
  float drift=u.viewport.z*(.055+seed*.025)+seed;
  float travel=link.style.x>.06 ? link.style.y:drift;
@@ -284,7 +289,7 @@ vertex Dot chainVertex(uint id [[vertex_id]],constant Link *links [[buffer(2)]],
  if(link.style.w<0.)head=1.-head;
  float behind=link.style.w>0. ? head-t:t-head;
  float tail=smoothstep(-.02,.004,behind)*exp(-max(0.,behind)*19.)*(1.-smoothstep(.18,.25,behind));
- float ambient=u.settings.w>.5 ? 0.:.09;
+ float ambient=u.settings.w>.5 || int(u.viewport.w)==2 ? 0.:.09;
  float packet=tail*(ambient+link.style.x*1.8);
  float grain=hash1(float(id)+seed*888.);
  Dot o;o.position=float4(project(p,u),0,1);o.size=1.35+min(link.style.x,1.6)*1.1+min(packet,2.)*5.;

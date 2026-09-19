@@ -71,12 +71,14 @@ struct OverviewConstellationLayout {
             labels[id]=SIMD4(-labelWidth/2,orbit+6,labelWidth,15)
             items.append(main)
             let children=tasks.filter{$0.id != id && family[$0.id]==id}.sorted{$0.id<$1.id}
-            let inner=min(orbit*0.77,rootSize*1.25),density=Float(max(1,children.count))
-            let childSize=max(1.2,min(rootSize*0.22,orbit/sqrt(density)*0.48))
+            let inner=min(orbit*0.77,rootSize*0.90),density=Float(max(1,children.count))
+            let childSize=max(1.2,min(rootSize*0.28,orbit/sqrt(density)*0.48))
             for (i,t) in children.enumerated(){
                 let angle=Float(i)*2.399963+stableSeed(id)*6.283185
-                let distance=inner+(orbit-inner)*sqrt((Float(i)+0.5)/density)
-                positions[t.id]=SIMD3(chosen.x+cos(angle)*distance*2/width,chosen.y-sin(angle)*distance*2/height,0)
+                let distance=inner+(rootSize*1.35-inner)*sqrt((Float(i)+0.5)/density)
+                let dx=cos(angle)*distance,dy=sin(angle)*distance*0.58
+                let x=dx*cos(Float(-0.25))-dy*sin(Float(-0.25)),y=dx*sin(Float(-0.25))+dy*cos(Float(-0.25))
+                positions[t.id]=SIMD3(chosen.x+x*2/width,chosen.y-y*2/height,0)
                 radii[t.id]=childSize*(0.88+Float(TokenScale.cumulative(t.total).tier)*0.03)*2/height
                 items.append(t)
             }
