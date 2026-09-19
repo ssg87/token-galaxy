@@ -1,5 +1,11 @@
 # Changes
 
+## 0.8.1 — 2026-09-19
+
+Replace the overview grid with a seeded, organic universe: varied larger task nebulae, their orbiting children and a shared diffuse background drift slowly together. Ordinary refresh and selection keep the layout stable; the new “重排宇宙” button smoothly changes its arrangement without changing selection, filters, counters or activity. Labels follow rendered positions and appear for selected, working or pointed-at families. The universe occupies 56% of the window.
+
+Preserve the compact orb, Touch Bar, parent-child activity links, token-surge motion and automatic selection rules. Universe motion uses an integrated visual clock, freezes with pause/Reduce Motion, and does not catch up after a hidden window. Regression coverage includes stable seeds, drift, reshuffling, all 160 fixture records, native hit testing and close/reopen rendering.
+
 ## 0.8.0 — 2026-09-18
 
 Give the overview an independent multi-family layout instead of the orb's 14–18-node selection. Every currently read record is represented, with a larger root nebula, nearby descendants, real immediate-parent links and root task labels. Stable family order survives selection and refresh; outline selection is restored by task ID. The field uses half the overview height and adapts to viewport size. Missing parents and cycles are bounded safely.

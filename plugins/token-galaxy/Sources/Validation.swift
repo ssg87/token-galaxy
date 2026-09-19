@@ -322,6 +322,20 @@ func runFamilyOverviewChecks() throws {
         try validationCheck(abs(node.space.x)<1 && abs(node.space.y)<1,"Family center lies outside overview")
         if let parent=t.parentID,let p=model.shown.firstIndex(where:{$0.id==parent}){try validationCheck(model.nodes[p].space.w>node.space.w*2,"Main task lost size hierarchy")}
     }
+    let beforeDrift=model.nodes.map{$0.space}
+    for _ in 0..<300{model.step(1.0/30)}
+    try validationCheck(model.nodes.map{$0.space} != beforeDrift && model.selected=="main-17","Universe drift stopped or changed selection")
+    let frozen=model.nodes.map{$0.space}
+    for _ in 0..<60{model.step(1.0/30,reduceMotion:true)}
+    try validationCheck(model.nodes.map{$0.space}==frozen,"Reduced motion did not freeze universe placement")
+    model.reshuffleOverview()
+    try validationCheck(model.nodes.map{$0.space}==frozen && model.selected=="main-17","Reshuffle jumped instantly or changed selection")
+    for _ in 0..<180{model.step(1.0/30)}
+    try validationCheck(model.nodes.map{$0.space} != frozen && model.nodes.count==160 && model.links.count==127,"Reshuffle lost families or did not move")
+    let layoutA=OverviewConstellationLayout(tasks:tasks,previousOrder:[],viewport:SIMD2(1080,414))
+    let layoutB=OverviewConstellationLayout(tasks:tasks,previousOrder:[],viewport:SIMD2(1080,414),seed:1)
+    let repeatA=OverviewConstellationLayout(tasks:tasks,previousOrder:[],viewport:SIMD2(1080,414))
+    try validationCheck(layoutA.positions==repeatA.positions && layoutA.positions != layoutB.positions,"Seeded layout is unstable or cannot reshuffle")
     model.setOverviewViewport(SIMD2(760,280));try validationCheck(model.nodes.count==160,"Narrow overview lost records")
     var dense=tasks.filter{$0.id=="main-0" || $0.parentID != nil};for i in dense.indices where dense[i].parentID != nil{dense[i].parentID="main-0"}
     model.update(dense,deltas:[:],events:[:]);try validationCheck(model.nodes.count==128 && model.links.count==127,"Dense family lost children")

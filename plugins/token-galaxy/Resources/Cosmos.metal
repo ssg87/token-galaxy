@@ -366,6 +366,19 @@ fragment float4 backgroundFragment(Full in [[stage_in]],constant Scene &u [[buff
  float2 uv=in.position.xy/u.viewport.xy,p=uv*2.-1.;float mask=edge(in.position.xy,u);if(mask<.001)discard_fragment();
  float3 c=float3(.0015,.002,.004);
  if(int(u.viewport.w)==1){float ridge=riverRidge(uv.x,u.dynamics.x);float band=exp(-pow((p.y+ridge)*4.5,2.));c+=mix(float3(.035,.045,.062),float3(.055,.025,.016),u.layout.w)*band;}
+ else if(int(u.viewport.w)==2){
+  // One quiet cosmic field; observed task activity only drives the task nebulae.
+  float t=u.viewport.z*.006;
+  float2 q=rotate2(p,-t-.32);q.y*=1.45;
+  float r=length(q),a=atan2(q.y,q.x);
+  float dust=noise(q*3.+float2(7.,13.))*.62+noise(q*8.+19.)*.28+noise(q*21.)*.10;
+  float arms=pow(.5+.5*sin(a*2.-r*5.+dust*2.),3.);
+  float veil=exp(-r*r*.85)*(.25+arms*.75)*smoothstep(.22,.78,dust);
+  c+=mix(float3(.025,.040,.063),float3(.062,.039,.029),noise(q*2.+31.))*veil;
+  float2 grid=(rotate2(p,-t*.45)+1.)*.5*float2(u.viewport.x/3.,u.viewport.y/3.);
+  float pin=hash1(floor(grid.x)+floor(grid.y)*173.);
+  c+=step(.992,pin)*pow(max(0.,1.-length(fract(grid)-.5)*2.),7.)*float3(.16,.18,.23);
+ }
  else {
   float2 diskp=rotate2(p,-.38);float spiral=atan2(diskp.y*2.,diskp.x)*3.-length(float2(diskp.x,diskp.y*2.))*11.;
   float wisps=noise(diskp*8.+float2(u.dynamics.x*.10,13.));

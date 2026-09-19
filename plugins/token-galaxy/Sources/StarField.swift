@@ -28,6 +28,9 @@ final class StarField: NSView, MTKViewDelegate {
     var stale = false { didSet { model.stale = stale } }
     private var overviewLabels=[String:OverviewTaskLabel]()
     private var overviewTimer:Timer?
+    private var overviewTracking:NSTrackingArea?
+    private var hoveredFamily:String?
+    private var workingFamilies=Set<String>()
     private var metal: ClearMetalView?
     private var queue: MTLCommandQueue?
     private var background: MTLRenderPipelineState?
@@ -61,19 +64,45 @@ final class StarField: NSView, MTKViewDelegate {
     private func updateOverviewLabels(){
         guard isOverview else{return}
         let roots=model.overviewRoots
+        workingFamilies=Set(model.shown.filter{$0.isWorking}.compactMap{model.overviewFamilies[$0.id]})
         for id in Array(overviewLabels.keys) where !roots.contains(id){overviewLabels.removeValue(forKey:id)?.removeFromSuperview()}
         for id in roots {
             guard let rect=model.overviewLabelRects[id],let task=model.shown.first(where:{$0.id==id}) else{continue}
             let label=overviewLabels[id] ?? OverviewTaskLabel(labelWithString:"")
             if overviewLabels[id]==nil{label.alignment = .center;label.lineBreakMode = .byTruncatingTail;addSubview(label);overviewLabels[id]=label}
-            label.frame=NSRect(x:CGFloat(rect.x),y:CGFloat(rect.y),width:CGFloat(rect.z),height:CGFloat(rect.w))
             label.font=NSFont.systemFont(ofSize:min(11,max(9,CGFloat(rect.z)/11)),weight:.medium)
             label.stringValue=task.label
             label.textColor=model.overviewFamilies[selected ?? ""]==id ? .systemMint:.secondaryLabelColor
             let children=model.overviewFamilies.values.filter{$0==id}.count-1
             label.toolTip="\(task.label)\n\(task.provider.label) · \(children) 个子任务"
         }
+        updateOverviewLabelFrames()
     }
+    func reshuffleOverview(){model.reshuffleOverview();updateOverviewLabels()}
+    private func updateOverviewLabelFrames(){
+        guard isOverview else{return}
+        let selectedFamily=model.overviewFamilies[selected ?? ""]
+        for (index,task) in model.shown.enumerated(){
+            guard index<model.nodes.count,let label=overviewLabels[task.id],let rect=model.overviewLabelRects[task.id] else{continue}
+            let p=model.nodes[index].space
+            let x=(1+CGFloat(p.x))*bounds.width/2+CGFloat(rect.x)
+            let y=(1-CGFloat(p.y))*bounds.height/2+CGFloat(rect.y)
+            label.frame=NSRect(x:max(2,min(bounds.width-CGFloat(rect.z)-2,x)),y:max(2,min(bounds.height-CGFloat(rect.w)-2,y)),width:CGFloat(rect.z),height:CGFloat(rect.w))
+            label.isHidden=task.id != selectedFamily && task.id != hoveredFamily && !workingFamilies.contains(task.id)
+        }
+    }
+    override func updateTrackingAreas(){
+        super.updateTrackingAreas()
+        if let old=overviewTracking{removeTrackingArea(old);overviewTracking=nil}
+        guard isOverview else{return}
+        let area=NSTrackingArea(rect:.zero,options:[.mouseMoved,.mouseEnteredAndExited,.activeAlways,.inVisibleRect],owner:self,userInfo:nil)
+        addTrackingArea(area);overviewTracking=area
+    }
+    override func mouseMoved(with event:NSEvent){
+        guard isOverview else{return}
+        hoveredFamily=taskID(at:convert(event.locationInWindow,from:nil)).flatMap{model.overviewFamilies[$0]};updateOverviewLabelFrames()
+    }
+    override func mouseExited(with event:NSEvent){hoveredFamily=nil;updateOverviewLabelFrames()}
     deinit {overviewTimer?.invalidate()}
     private func configureFrameDriver(){
         overviewTimer?.invalidate();overviewTimer=nil
@@ -184,6 +213,7 @@ final class StarField: NSView, MTKViewDelegate {
             model.step(dt, reduceMotion: reduced)
             if !reduced { visualTime += dt }
         }
+        updateOverviewLabelFrames()
         encode(pass, command, view.drawableSize); command.present(drawable); command.commit(); frameCount += 1
     }
     func advancePreview(seconds: Float) {
@@ -215,12 +245,13 @@ final class StarField: NSView, MTKViewDelegate {
         guard let c = CGContext(data: &pixels, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
                                 space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue),
               let cg = c.makeImage() else { return nil }
+        updateOverviewLabelFrames()
         let image=NSImage(cgImage:cg,size:s)
         guard isOverview,!overviewLabels.isEmpty else{return image}
         let composed=NSImage(size:s);composed.lockFocusFlipped(true)
         image.draw(in:NSRect(origin:.zero,size:s))
         let sx=s.width/max(1,bounds.width),sy=s.height/max(1,bounds.height)
-        for label in overviewLabels.values {
+        for label in overviewLabels.values where !label.isHidden {
             let style=NSMutableParagraphStyle();style.alignment = .center;style.lineBreakMode = .byTruncatingTail
             let frame=label.frame,rect=NSRect(x:frame.minX*sx,y:frame.minY*sy,width:frame.width*sx,height:frame.height*sy)
             let font=NSFont.systemFont(ofSize:(label.font?.pointSize ?? 10)*sy,weight:.medium)
@@ -230,7 +261,7 @@ final class StarField: NSView, MTKViewDelegate {
     }
     func taskID(at point: NSPoint) -> String? {
         guard !model.nodes.isEmpty else { return nil }
-        if isOverview,let label=overviewLabels.first(where:{$0.value.frame.contains(point)}){return label.key}
+        if isOverview,let label=overviewLabels.first(where:{!$0.value.isHidden && $0.value.frame.contains(point)}){return label.key}
         let m = min(bounds.width, bounds.height)
         let candidates = model.nodes.enumerated().map { i, node -> (Int, CGFloat) in
             let perspective = 1 / (1 - node.space.z * 0.20)

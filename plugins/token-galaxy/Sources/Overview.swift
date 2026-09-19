@@ -13,14 +13,14 @@ final class OverviewController:NSObject,NSOutlineViewDataSource,NSOutlineViewDel
     private var records=[TaskUsage](),deltas=[String:Int64](),roots=[AgentNode](),nodes=[String:AgentNode]()
     private var filter="",signature="",projectKey="",updating=false
     override init(){
-        window=NSWindow(contentRect:NSRect(x:0,y:0,width:1080,height:740),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false);window.title="Token 星河 · 任务与代理工作总览";window.minSize=NSSize(width:760,height:560);window.isReleasedWhenClosed=false
+        window=NSWindow(contentRect:NSRect(x:0,y:0,width:1080,height:740),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false);window.title="Token 星河 · 任务与代理工作总览";window.minSize=NSSize(width:760,height:560);window.isReleasedWhenClosed=false;window.acceptsMouseMovedEvents=true
         let root=NSView();root.wantsLayer=true;root.layer?.backgroundColor=NSColor(calibratedRed:0.035,green:0.045,blue:0.075,alpha:1).cgColor;window.contentView=root;root.appearance=NSAppearance(named:.darkAqua)
         field=StarField(frame:.zero);field.isOverview=true
         super.init();window.delegate=self
         project.addItem(withTitle:"全部项目");project.lastItem?.representedObject=""
         project.target=self;project.action=#selector(changeProject);project.translatesAutoresizingMaskIntoConstraints=false;root.addSubview(project)
         provider.addItem(withTitle:"全部来源");provider.lastItem?.representedObject="";provider.isHidden=true;provider.target=self;provider.action=#selector(changeProvider);provider.translatesAutoresizingMaskIntoConstraints=false;root.addSubview(provider)
-        let reset=NSButton(title:"全部项目",target:self,action:#selector(resetFilter));reset.translatesAutoresizingMaskIntoConstraints=false;root.addSubview(reset)
+        let reset=NSButton(title:"重排宇宙",target:self,action:#selector(reshuffleUniverse));reset.translatesAutoresizingMaskIntoConstraints=false;root.addSubview(reset)
         summary.font=NSFont.systemFont(ofSize:12);summary.textColor = .secondaryLabelColor;summary.translatesAutoresizingMaskIntoConstraints=false;root.addSubview(summary)
         field.translatesAutoresizingMaskIntoConstraints=false;field.onSelect={[weak self] id in guard let self=self,let node=self.nodes[id] else{return};var ancestors=[AgentNode](),p=node.task.parentID,seen=Set<String>();while let key=p,let parent=self.nodes[key],!seen.contains(key){seen.insert(key);ancestors.append(parent);p=parent.task.parentID};for parent in ancestors.reversed(){self.outline.expandItem(parent)};let row=self.outline.row(forItem:node);if row>=0{self.outline.selectRowIndexes(IndexSet(integer:row),byExtendingSelection:false);self.outline.scrollRowToVisible(row)}};root.addSubview(field)
         let scroll=NSScrollView();scroll.hasVerticalScroller=true;scroll.hasHorizontalScroller=true;scroll.autohidesScrollers=true;scroll.translatesAutoresizingMaskIntoConstraints=false;scroll.drawsBackground=false;root.addSubview(scroll)
@@ -31,7 +31,7 @@ final class OverviewController:NSObject,NSOutlineViewDataSource,NSOutlineViewDel
         providerWidth=provider.widthAnchor.constraint(equalToConstant:0)
         NSLayoutConstraint.activate([
             project.leadingAnchor.constraint(equalTo:root.leadingAnchor,constant:18),project.topAnchor.constraint(equalTo:root.topAnchor,constant:14),project.widthAnchor.constraint(equalToConstant:210),provider.leadingAnchor.constraint(equalTo:project.trailingAnchor,constant:10),providerWidth!,provider.centerYAnchor.constraint(equalTo:project.centerYAnchor),reset.leadingAnchor.constraint(equalTo:provider.trailingAnchor,constant:10),reset.centerYAnchor.constraint(equalTo:project.centerYAnchor),summary.trailingAnchor.constraint(equalTo:root.trailingAnchor,constant:-18),summary.centerYAnchor.constraint(equalTo:project.centerYAnchor),
-            field.topAnchor.constraint(equalTo:project.bottomAnchor,constant:12),field.leadingAnchor.constraint(equalTo:root.leadingAnchor),field.trailingAnchor.constraint(equalTo:root.trailingAnchor),field.heightAnchor.constraint(equalTo:root.heightAnchor,multiplier:0.50),
+            field.topAnchor.constraint(equalTo:project.bottomAnchor,constant:12),field.leadingAnchor.constraint(equalTo:root.leadingAnchor),field.trailingAnchor.constraint(equalTo:root.trailingAnchor),field.heightAnchor.constraint(equalTo:root.heightAnchor,multiplier:0.56),
             scroll.topAnchor.constraint(equalTo:field.bottomAnchor,constant:8),scroll.leadingAnchor.constraint(equalTo:root.leadingAnchor,constant:14),scroll.trailingAnchor.constraint(equalTo:root.trailingAnchor,constant:-14),scroll.bottomAnchor.constraint(equalTo:note.topAnchor,constant:-10),note.leadingAnchor.constraint(equalTo:root.leadingAnchor,constant:18),note.trailingAnchor.constraint(lessThanOrEqualTo:root.trailingAnchor,constant:-18),note.bottomAnchor.constraint(equalTo:root.bottomAnchor,constant:-12)
         ]);window.center()
     }
@@ -41,6 +41,7 @@ final class OverviewController:NSObject,NSOutlineViewDataSource,NSOutlineViewDel
     func windowDidDeminiaturize(_ notification:Notification){field.paused=motionPaused}
     @objc func changeProvider(){reload()}
     @objc func changeProject(){filter=project.selectedItem?.representedObject as? String ?? "";reload()}
+    @objc func reshuffleUniverse(){field.reshuffleOverview()}
     @objc func resetFilter(){filter="";project.selectItem(at:0);reload()}
     func update(_ items:[TaskUsage],observed:[String:Int64],increments:[String:Int64],events:[String:[WorkEvent]]=[:]){
         records=items;deltas=observed
