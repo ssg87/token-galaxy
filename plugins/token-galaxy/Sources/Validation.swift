@@ -284,6 +284,14 @@ func runOverviewStateChecks() throws {
     try validationCheck(model.links.count==1 && model.links[0].style.w == -1,"Reply did not travel toward the real parent")
     model.update([parent,child],deltas:[:],events:[parent.id:[WorkEvent(id:"dispatch-live",at:now,phase:.spawn)]]);for _ in 0..<15 {model.step(1.0/30)}
     try validationCheck(model.links[0].style.w == 1,"Live parent dispatch did not travel toward its active child")
+    let overview=GalaxyModel();overview.overviewLayout=true
+    overview.update([parent,child],deltas:[:],events:[child.id:[WorkEvent(id:"edge-reply",at:now,phase:.reply)]])
+    for _ in 0..<15{overview.step(1.0/30)}
+    try validationCheck(overview.links.count==1 && overview.links[0].style.x>0 && overview.links[0].style.w == -1,"Overview reply lost its parent edge")
+    for _ in 0..<180{overview.step(1.0/30)}
+    try validationCheck(overview.links[0].style.x==0 && overview.rotationRate(for:child.id)>0.239,"Sustained work invented ongoing edge traffic or stopped task motion")
+    let pi=overview.shown.firstIndex{$0.id==parent.id}!,ci=overview.shown.firstIndex{$0.id==child.id}!
+    try validationCheck(overview.links[0].source==overview.nodes[pi].space && overview.links[0].target==overview.nodes[ci].space,"Edge endpoints detached from drifting nodes")
     child.parentID=nil;model.update([parent,child],deltas:[:],events:[:]);try validationCheck(model.links.isEmpty,"Invented a relationship between unrelated tasks")
     parent.lifecycle="task_complete";child.lifecycle="task_complete"
     let idle=GalaxyModel();idle.update([parent,child],deltas:[:],events:[:]);idle.step(0.1)

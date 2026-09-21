@@ -1,5 +1,9 @@
 # Changes
 
+## 0.8.3 — 2026-09-22
+
+Keep overview token pulses within their own nebula with matching aspect correction. Remove unanchored overview work rays; task motion and actual parent-child edges retain work feedback. Make overview relationship traces clearer, remove decorative idle edge packets, and bound overview edge activity to recent work/token observations so sustained rotation alone does not imply continuous traffic. Restored working state does not replay edge packets; a separate observed-event clock tracks newly consumed work events. Checks cover a fresh reply, expiry while work rotation continues, and endpoints following drifting nodes.
+
 ## 0.8.2 — 2026-09-19
 
 Bring overview children into a compact, flattened cluster around the parent nebula. Scale link curvature to the actual parent-child distance instead of using the compact orb’s large fixed arc; keep observed activity packets and remove idle overview packets. The orb and Touch Bar retain their geometry.

@@ -289,14 +289,16 @@ vertex Dot chainVertex(uint id [[vertex_id]],constant Link *links [[buffer(2)]],
  if(link.style.w<0.)head=1.-head;
  float behind=link.style.w>0. ? head-t:t-head;
  float tail=smoothstep(-.02,.004,behind)*exp(-max(0.,behind)*19.)*(1.-smoothstep(.18,.25,behind));
- float ambient=u.settings.w>.5 || int(u.viewport.w)==2 ? 0.:.09;
+ float ambient=0.; // A relationship alone does not imply messages in flight.
  float packet=tail*(ambient+link.style.x*1.8);
  float grain=hash1(float(id)+seed*888.);
  Dot o;o.position=float4(project(p,u),0,1);o.size=1.35+min(link.style.x,1.6)*1.1+min(packet,2.)*5.;
- o.color=float4(clay ? float3(.851,.467,.341):silver(.05),(.10+min(link.style.x,1.6)*.26+packet*2.4)*(.65+grain*.35));return o;
+ o.color=float4(clay ? float3(.851,.467,.341):silver(.05),((int(u.viewport.w)==2 ? .22:.10)+min(link.style.x,1.6)*.26+packet*2.4)*(.65+grain*.35));return o;
 }
 vertex Dot pulseVertex(uint id [[vertex_id]],uint group [[instance_id]],constant Galaxy *g [[buffer(0)]],constant Scene &u [[buffer(1)]]) {
  Galaxy a=g[group];bool usage=id>=900;uint j=id%900;
+ // Work is expressed by the nebula and its real edges, not unanchored incoming rays.
+ if(int(u.viewport.w)==2 && !usage)return hiddenDot();
  float streams=usage ? a.burst.y:(a.motion.z==1. ? 2.:a.motion.z==2. ? 5.:3.);
  float count=usage ? min(900.,streams*36.):streams*42.;
  float energy=usage ? a.motion.w:a.motion.y;if(float(j)>=count || energy<.025)return hiddenDot();
@@ -318,6 +320,11 @@ vertex Dot pulseVertex(uint id [[vertex_id]],uint group [[instance_id]],constant
  float bend=(noise(float2(progress*5.+seed,stream*3.+a.motion.x*.12))-.5)*.19;
  float3 local=disk(distance,angle+bend+(k-.5)*.06,(h-.5)*.06,a.visual.w);
  float3 p=a.space.xyz+local*(usage ? .95:a.space.w+.36);
+ if(int(u.viewport.w)==2){
+  // Token particles belong to this nebula; apply the same aspect correction as its stars.
+  float3 halo=disk(.85+progress*.50,angle+bend,(h-.5)*.04,a.visual.w)*a.space.w;
+  p=a.space.xyz+float3(halo.x*u.viewport.y/u.viewport.x,halo.y,halo.z);
+ }
  if(int(u.viewport.w)==1){
   float sign=hash1(stream+seed+18.)>.5 ? 1.:-1.;
   p.x=a.space.x+(inward ? 1.-progress:progress)*(.38+a.burst.z*.12)*sign;

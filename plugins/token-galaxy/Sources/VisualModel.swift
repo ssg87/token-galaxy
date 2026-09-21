@@ -59,6 +59,7 @@ private struct NodeMotion {
     var position = SIMD3<Float>(repeating: 0)
     var target = SIMD3<Float>(repeating: 0)
     var workAt: Float = -100
+    var edgeWorkAt: Float = -100
     var workPhase: WorkPhase = .quiet
     var workSeed: Float = 0
     var workLevel: Float = 0
@@ -197,7 +198,7 @@ final class GalaxyModel {
                     var n = state[t.id]!
                     if event.phase == .input || (clock - n.workAt >= 0.30 && n.pending.isEmpty) {
                         if event.phase == .input { n.pending.removeAll() }
-                        n.workAt = clock; n.workPhase = event.phase; n.workSeed = stableSeed(event.id)
+                        n.workAt = clock; n.edgeWorkAt = clock; n.workPhase = event.phase; n.workSeed = stableSeed(event.id)
                         n.workLevel = event.phase == .waiting ? 0 : event.phase == .thinking ? 0.72 : event.phase == .complete ? 0.55 : 1
                     } else if n.pending.last?.phase != event.phase {
                         n.pending.append(event); if n.pending.count > 6 { n.pending.removeFirst() }
@@ -280,7 +281,7 @@ final class GalaxyModel {
         for task in tasks {
             guard var n = state[task.id] else { continue }
             if clock - n.workAt >= 0.30, !n.pending.isEmpty {
-                let next = n.pending.removeFirst();n.workAt = clock;n.workPhase = next.phase;n.workSeed = stableSeed(next.id)
+                let next = n.pending.removeFirst();n.workAt = clock;n.edgeWorkAt = clock;n.workPhase = next.phase;n.workSeed = stableSeed(next.id)
                 n.workLevel = next.phase == .waiting ? 0 : next.phase == .thinking ? 0.72 : next.phase == .complete ? 0.55 : 1
             }
             let workAge = clock - n.workAt
@@ -345,12 +346,14 @@ final class GalaxyModel {
             guard let parentID = t.parentID, let parent = shown.firstIndex(where: { $0.id == parentID }), parent != index else { continue }
             let a = nodes[parent], b = nodes[index]
             let childPhase=WorkPhase(rawValue:Int(b.motion.z)) ?? .quiet
-            let childActive=max(b.motion.y,b.motion.w)
+            let childWork=b.motion.y*(overviewLayout ? max(0,1-(clock-(state[t.id]?.edgeWorkAt ?? -100))/4):1)
+            let childToken=b.motion.w*(overviewLayout ? max(0,1-b.flow.y/max(1,b.burst.x)):1)
+            let childActive=max(childWork,childToken)
             // Dispatch is a visual cue on an existing active parent-child relationship,
             // not a claim that an unobserved message or extra tokens were generated.
-            let dispatch = t.isWorking && Int(a.motion.z)==WorkPhase.spawn.rawValue ? a.motion.y:0
+            let dispatch = t.isWorking && Int(a.motion.z)==WorkPhase.spawn.rawValue ? a.motion.y*(overviewLayout ? max(0,1-(clock-(state[parentID]?.edgeWorkAt ?? -100))/4):1):0
             let useParent=dispatch>childActive
-            let useToken = !useParent && b.motion.w > b.motion.y
+            let useToken = !useParent && childToken > childWork
             let age = useParent ? a.flow.x:(useToken ? b.flow.y:b.flow.x)
             let active = max(childActive,dispatch)
             let returning = !useParent && [.result,.reply,.complete].contains(childPhase)
