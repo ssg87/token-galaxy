@@ -1,5 +1,9 @@
 # Changes
 
+## 0.8.4 — 2026-09-22
+
+Apply nebula-local token pulses and removal of unanchored work rays to the floating orb too. Fade orb token particles before they enter another provider’s core, preventing a Codex pulse from appearing to power Claude (or the reverse). Reject cross-provider parent references when constructing visual edges. Occlude orb edges behind other-provider cores, connect at node rims instead of painting over their centers, and tone-map orange particles on every surface so bright Claude feedback does not clip to white. Keep nebula shape, work/token rotation, appearance preferences and Touch Bar pulse geometry.
+
 ## 0.8.3 — 2026-09-22
 
 Keep overview token pulses within their own nebula with matching aspect correction. Remove unanchored overview work rays; task motion and actual parent-child edges retain work feedback. Make overview relationship traces clearer, remove decorative idle edge packets, and bound overview edge activity to recent work/token observations so sustained rotation alone does not imply continuous traffic. Restored working state does not replay edge packets; a separate observed-event clock tracks newly consumed work events. Checks cover a fresh reply, expiry while work rotation continues, and endpoints following drifting nodes.

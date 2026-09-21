@@ -271,7 +271,7 @@ fragment float4 markFragment(Mark in [[stage_in]],constant Scene &u [[buffer(1)]
  float alpha=min(coverage.x,min(coverage.y,coverage.z))*in.tint.a*edge(in.position.xy,u);
  return float4(in.tint.rgb*alpha*(int(u.viewport.w)==1 ? 1.6:1.),alpha);
 }
-vertex Dot chainVertex(uint id [[vertex_id]],constant Link *links [[buffer(2)]],constant Scene &u [[buffer(1)]]) {
+vertex Dot chainVertex(uint id [[vertex_id]],constant Link *links [[buffer(2)]],constant Scene &u [[buffer(1)]],constant Galaxy *g [[buffer(0)]]) {
  uint index=id/72,j=id%72;Link link=links[index];float t=float(j)/71.;
  float3 a=link.source.xyz,b=link.target.xyz;bool clay=link.style.z<0.;float seed=abs(link.style.z);
  float side=b.y>=a.y ? 1.:-1.;
@@ -291,14 +291,25 @@ vertex Dot chainVertex(uint id [[vertex_id]],constant Link *links [[buffer(2)]],
  float tail=smoothstep(-.02,.004,behind)*exp(-max(0.,behind)*19.)*(1.-smoothstep(.18,.25,behind));
  float ambient=0.; // A relationship alone does not imply messages in flight.
  float packet=tail*(ambient+link.style.x*1.8);
- float grain=hash1(float(id)+seed*888.);
+ float grain=hash1(float(id)+seed*888.),visibility=1.;
+ if(int(u.viewport.w)==0){
+  float startCore=link.source.w*(clay ? .62:.24),endCore=link.target.w*(clay ? .62:.24);
+  visibility*=smoothstep(startCore*.85,startCore,length(project(p,u)-project(a,u)));
+  visibility*=smoothstep(endCore*.85,endCore,length(project(p,u)-project(b,u)));
+  // A same-provider edge may pass behind the other provider; never paint over its core.
+  for(uint other=0;other<uint(u.settings.y);other++){
+   Galaxy neighbor=g[other];if((neighbor.brand.x>.5)==clay)continue;
+   float core=neighbor.space.w*(neighbor.brand.x>.5 ? .72:.48);
+   visibility*=smoothstep(core*.75,core,length(project(p,u)-project(neighbor.space.xyz,u)));
+  }
+ }
  Dot o;o.position=float4(project(p,u),0,1);o.size=1.35+min(link.style.x,1.6)*1.1+min(packet,2.)*5.;
- o.color=float4(clay ? float3(.851,.467,.341):silver(.05),((int(u.viewport.w)==2 ? .22:.10)+min(link.style.x,1.6)*.26+packet*2.4)*(.65+grain*.35));return o;
+ o.color=float4(clay ? float3(.851,.467,.341):silver(.05),((int(u.viewport.w)==2 ? .22:.10)+min(link.style.x,1.6)*.26+packet*2.4)*(.65+grain*.35)*visibility);return o;
 }
 vertex Dot pulseVertex(uint id [[vertex_id]],uint group [[instance_id]],constant Galaxy *g [[buffer(0)]],constant Scene &u [[buffer(1)]]) {
  Galaxy a=g[group];bool usage=id>=900;uint j=id%900;
  // Work is expressed by the nebula and its real edges, not unanchored incoming rays.
- if(int(u.viewport.w)==2 && !usage)return hiddenDot();
+ if(int(u.viewport.w)!=1 && !usage)return hiddenDot();
  float streams=usage ? a.burst.y:(a.motion.z==1. ? 2.:a.motion.z==2. ? 5.:3.);
  float count=usage ? min(900.,streams*36.):streams*42.;
  float energy=usage ? a.motion.w:a.motion.y;if(float(j)>=count || energy<.025)return hiddenDot();
@@ -320,15 +331,24 @@ vertex Dot pulseVertex(uint id [[vertex_id]],uint group [[instance_id]],constant
  float bend=(noise(float2(progress*5.+seed,stream*3.+a.motion.x*.12))-.5)*.19;
  float3 local=disk(distance,angle+bend+(k-.5)*.06,(h-.5)*.06,a.visual.w);
  float3 p=a.space.xyz+local*(usage ? .95:a.space.w+.36);
- if(int(u.viewport.w)==2){
+ if(int(u.viewport.w)!=1){
   // Token particles belong to this nebula; apply the same aspect correction as its stars.
   float3 halo=disk(.85+progress*.50,angle+bend,(h-.5)*.04,a.visual.w)*a.space.w;
-  p=a.space.xyz+float3(halo.x*u.viewport.y/u.viewport.x,halo.y,halo.z);
+  p=a.space.xyz+float3(halo.x*(int(u.viewport.w)==2 ? u.viewport.y/u.viewport.x:1.),halo.y,halo.z);
  }
  if(int(u.viewport.w)==1){
   float sign=hash1(stream+seed+18.)>.5 ? 1.:-1.;
   p.x=a.space.x+(inward ? 1.-progress:progress)*(.38+a.burst.z*.12)*sign;
   p.y=(k-.5)*.055+(stream-(streams-1.)*.5)*(.10/max(1.,streams/5.))+(noise(float2(p.x*7.,seed*.01))-.5)*.17;
+ }
+ if(int(u.viewport.w)==0){
+  // Do not paint one provider's token particles over the other provider's core.
+  for(uint other=0;other<uint(u.settings.y);other++){
+   Galaxy neighbor=g[other];if(neighbor.brand.x==a.brand.x)continue;
+   float separation=length(project(p,u)-project(neighbor.space.xyz,u));
+   float core=neighbor.space.w*(neighbor.brand.x>.5 ? .72:.48);
+   fade*=smoothstep(core*.75,core,separation);
+  }
  }
  Dot o;o.position=float4(project(p,u),0,1);o.size=(int(u.viewport.w)==1 ? 1.0:1.3)+pow(k,8.)*(int(u.viewport.w)==1 ? .7:1.3);
  o.color=float4(a.brand.x>.5 ? float3(.93,.57,.40):silver(.08),fade*min(1.5,energy)*(.38+k*.55));return o;
@@ -369,7 +389,7 @@ fragment float4 starFragment(Dot in [[stage_in]],float2 coord [[point_coord]],co
  float exposure=int(u.viewport.w)==1 ? 2.4:1.;
  float light=alpha*exposure;
  // Keep Claude orange at high exposure instead of clipping all channels to white.
- if(int(u.viewport.w)==1 && in.color.r>in.color.g*1.2)light=1.-exp(-light);
+ if(in.color.r>in.color.g*1.2)light=1.-exp(-light);
  return float4(in.color.rgb*light,clamp(alpha,0.,1.));
 }
 struct Full {float4 position [[position]];};

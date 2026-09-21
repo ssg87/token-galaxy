@@ -292,6 +292,9 @@ func runOverviewStateChecks() throws {
     try validationCheck(overview.links[0].style.x==0 && overview.rotationRate(for:child.id)>0.239,"Sustained work invented ongoing edge traffic or stopped task motion")
     let pi=overview.shown.firstIndex{$0.id==parent.id}!,ci=overview.shown.firstIndex{$0.id==child.id}!
     try validationCheck(overview.links[0].source==overview.nodes[pi].space && overview.links[0].target==overview.nodes[ci].space,"Edge endpoints detached from drifting nodes")
+    var otherProvider=child;otherProvider.provider = .claude
+    let separated=GalaxyModel();separated.update([parent,otherProvider],deltas:[:],events:[:])
+    try validationCheck(separated.links.isEmpty,"Cross-provider parent reference created a misleading edge")
     child.parentID=nil;model.update([parent,child],deltas:[:],events:[:]);try validationCheck(model.links.isEmpty,"Invented a relationship between unrelated tasks")
     parent.lifecycle="task_complete";child.lifecycle="task_complete"
     let idle=GalaxyModel();idle.update([parent,child],deltas:[:],events:[:]);idle.step(0.1)

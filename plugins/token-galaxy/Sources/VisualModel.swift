@@ -344,6 +344,7 @@ final class GalaxyModel {
         links = []
         for (index, t) in shown.enumerated() {
             guard let parentID = t.parentID, let parent = shown.firstIndex(where: { $0.id == parentID }), parent != index else { continue }
+            guard shown[parent].provider==t.provider else{continue}
             let a = nodes[parent], b = nodes[index]
             let childPhase=WorkPhase(rawValue:Int(b.motion.z)) ?? .quiet
             let childWork=b.motion.y*(overviewLayout ? max(0,1-(clock-(state[t.id]?.edgeWorkAt ?? -100))/4):1)
