@@ -1,5 +1,9 @@
 # Changes
 
+## 0.8.5 — 2026-09-22
+
+Restore floating-orb work trails as moving, curved particles within each task’s own nebula perimeter. Use a consistent white Codex / orange-gold Claude palette for activity particles and relationship packets. Preserve same-provider edge validation, core occlusion and orange highlight tone mapping; no cross-provider transfer is implied. Overview work rays stay off, and Touch Bar pulse colors/geometry stay unchanged. Existing nebula rotation, growth and appearance controls remain intact.
+
 ## 0.8.4 — 2026-09-22
 
 Apply nebula-local token pulses and removal of unanchored work rays to the floating orb too. Fade orb token particles before they enter another provider’s core, preventing a Codex pulse from appearing to power Claude (or the reverse). Reject cross-provider parent references when constructing visual edges. Occlude orb edges behind other-provider cores, connect at node rims instead of painting over their centers, and tone-map orange particles on every surface so bright Claude feedback does not clip to white. Keep nebula shape, work/token rotation, appearance preferences and Touch Bar pulse geometry.

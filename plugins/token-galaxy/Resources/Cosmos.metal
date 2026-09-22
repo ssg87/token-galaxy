@@ -21,6 +21,7 @@ float clearing(float2 pixel,Scene u) {
  if(int(u.viewport.w)==0)delta*=u.viewport.xy/min(u.viewport.x,u.viewport.y);
  return .08+.92*smoothstep(u.focus.w*.35,u.focus.w,length(delta));
 }
+float3 activityTint(bool claude) { return claude ? float3(.98,.55,.20):float3(.94,.97,1.); }
 float3 silver(float warmth=0.) { return mix(float3(.78,.88,1.),float3(1.,.93,.78),warmth); }
 Dot hiddenDot() { Dot o;o.position=float4(4,4,0,1);o.size=1;o.color=0;return o; }
 float3 disk(float radius,float angle,float depth,float seed) {
@@ -304,12 +305,12 @@ vertex Dot chainVertex(uint id [[vertex_id]],constant Link *links [[buffer(2)]],
   }
  }
  Dot o;o.position=float4(project(p,u),0,1);o.size=1.35+min(link.style.x,1.6)*1.1+min(packet,2.)*5.;
- o.color=float4(clay ? float3(.851,.467,.341):silver(.05),((int(u.viewport.w)==2 ? .22:.10)+min(link.style.x,1.6)*.26+packet*2.4)*(.65+grain*.35)*visibility);return o;
+ o.color=float4(activityTint(clay),((int(u.viewport.w)==2 ? .22:.10)+min(link.style.x,1.6)*.26+packet*2.4)*(.65+grain*.35)*visibility);return o;
 }
 vertex Dot pulseVertex(uint id [[vertex_id]],uint group [[instance_id]],constant Galaxy *g [[buffer(0)]],constant Scene &u [[buffer(1)]]) {
  Galaxy a=g[group];bool usage=id>=900;uint j=id%900;
- // Work is expressed by the nebula and its real edges, not unanchored incoming rays.
- if(int(u.viewport.w)!=1 && !usage)return hiddenDot();
+ // The orb keeps work trails local; the overview expresses work on its real edges.
+ if(int(u.viewport.w)==2 && !usage)return hiddenDot();
  float streams=usage ? a.burst.y:(a.motion.z==1. ? 2.:a.motion.z==2. ? 5.:3.);
  float count=usage ? min(900.,streams*36.):streams*42.;
  float energy=usage ? a.motion.w:a.motion.y;if(float(j)>=count || energy<.025)return hiddenDot();
@@ -333,7 +334,9 @@ vertex Dot pulseVertex(uint id [[vertex_id]],uint group [[instance_id]],constant
  float3 p=a.space.xyz+local*(usage ? .95:a.space.w+.36);
  if(int(u.viewport.w)!=1){
   // Token particles belong to this nebula; apply the same aspect correction as its stars.
-  float3 halo=disk(.85+progress*.50,angle+bend,(h-.5)*.04,a.visual.w)*a.space.w;
+  float radius=usage ? .85+progress*.50:(inward ? 1.30-progress*.42:.88+progress*.42);
+  float sweep=usage ? 0.:progress*(a.motion.z==2. ? 2.4:.65);
+  float3 halo=disk(radius,angle+bend+sweep,(h-.5)*.04,a.visual.w)*a.space.w;
   p=a.space.xyz+float3(halo.x*(int(u.viewport.w)==2 ? u.viewport.y/u.viewport.x:1.),halo.y,halo.z);
  }
  if(int(u.viewport.w)==1){
@@ -351,7 +354,7 @@ vertex Dot pulseVertex(uint id [[vertex_id]],uint group [[instance_id]],constant
   }
  }
  Dot o;o.position=float4(project(p,u),0,1);o.size=(int(u.viewport.w)==1 ? 1.0:1.3)+pow(k,8.)*(int(u.viewport.w)==1 ? .7:1.3);
- o.color=float4(a.brand.x>.5 ? float3(.93,.57,.40):silver(.08),fade*min(1.5,energy)*(.38+k*.55));return o;
+ o.color=float4(int(u.viewport.w)==1 ? (a.brand.x>.5 ? float3(.93,.57,.40):silver(.08)):activityTint(a.brand.x>.5),fade*min(1.5,energy)*(.38+k*.55));return o;
 }
 float riverRidge(float x,float t) {return (noise(float2(x*4.+t*.11,t*.09+31.))-.5)*.48+(noise(float2(x*11.-t*.14,t*.07+82.))-.5)*.20;}
 vertex Dot riverVertex(uint id [[vertex_id]],constant Galaxy *g [[buffer(0)]],constant Scene &u [[buffer(1)]]) {
