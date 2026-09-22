@@ -1,5 +1,9 @@
 # Changes
 
+## 0.8.6 — 2026-09-22
+
+Defer hidden/minimized overview UI and model refreshes, retaining only the latest records and observed totals. Restore current activity on reopening without replaying accumulated events or tokens. Cache organic placement across ordinary refreshes and selection changes, invalidating for topology, size tier, viewport or reshuffle changes. Keep fresh task metadata even when geometry is reused, and skip redundant selection assignments. Native checks cover hidden refresh suppression and latest-state restoration; model checks cover layout reuse and existing motion/accounting behavior.
+
 ## 0.8.5 — 2026-09-22
 
 Restore floating-orb work trails as moving, curved particles within each task’s own nebula perimeter. Use a consistent white Codex / orange-gold Claude palette for activity particles and relationship packets. Preserve same-provider edge validation, core occlusion and orange highlight tone mapping; no cross-provider transfer is implied. Overview work rays stay off, and Touch Bar pulse colors/geometry stay unchanged. Existing nebula rotation, growth and appearance controls remain intact.

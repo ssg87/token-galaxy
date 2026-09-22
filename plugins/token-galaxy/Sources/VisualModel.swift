@@ -88,6 +88,9 @@ final class GalaxyModel {
     var overviewLayout=false {didSet{chooseVisible();rebuild()}}
     private var overviewViewport=SIMD2<Float>(1080,370)
     private var overviewSeed:UInt64=0
+    private var cachedOverview:OverviewConstellationLayout?
+    private var overviewCacheKey=""
+    private(set) var layoutBuilds=0
     private var universeClock:Float=0
     private var universeExtents=SIMD2<Float>(0.8,0.65)
     func reshuffleOverview(){guard overviewLayout else{return};overviewSeed &+= 1;chooseVisible();rebuild()}
@@ -130,7 +133,7 @@ final class GalaxyModel {
     private(set) var focusID: String?
     private(set) var receivedEvents = 0
     private(set) var receivedTokens: Int64 = 0
-    var selected: String? { didSet { chooseVisible(); rebuild() } }
+    var selected: String? { didSet { if selected != oldValue{chooseVisible(); rebuild()} } }
     var stale = false
     private var state = [String: NodeMotion]()
     private var byID = [String: TaskUsage]()
@@ -219,11 +222,31 @@ final class GalaxyModel {
         chooseVisible()
         rebuild()
     }
+    func resumeSnapshot(_ items:[TaskUsage]){
+        // Restore current activity without replaying events/tokens collected while hidden.
+        let latest=Dictionary(uniqueKeysWithValues:items.map{($0.id,$0)})
+        for (id,old) in state {
+            var n=NodeMotion();n.position=old.position;n.target=old.target;n.radius=old.radius;n.phase=old.phase;n.born=old.born
+            if let t=latest[id],t.isWorking,t.readIssue==nil {
+                let phase=t.events.last?.phase ?? .thinking
+                if ![WorkPhase.quiet,.complete,.interrupted,.waiting].contains(phase){
+                    n.workPhase=phase;n.workAt=clock-Float(max(0,Date().timeIntervalSince1970-(t.lastEventAt ?? 0)));n.workEnergy=0.26
+                }
+            }
+            state[id]=n
+        }
+        recentUsage=[];recentTotals = .zero;recentVisual=SIMD4(0,0,0.5,0)
+    }
     private func chooseVisible() {
         guard !tasks.isEmpty else { shown = [];overviewRoots=[];overviewLabelRects=[:];overviewFamilies=[:]; return }
         if overviewLayout {
-            let layout=OverviewConstellationLayout(tasks:tasks,previousOrder:overviewOrder,viewport:overviewViewport,seed:overviewSeed)
-            overviewOrder=layout.order;shown=layout.items;overviewRoots=layout.roots;overviewRadii=layout.radii;overviewLabelRects=layout.labelRects;overviewFamilies=layout.families;universeExtents=layout.worldExtents
+            let key="\(overviewViewport.x):\(overviewViewport.y):\(overviewSeed)|"+tasks.map{"\($0.id):\($0.parentID ?? ""):\(TokenScale.cumulative($0.total).tier)"}.sorted().joined(separator:"|")
+            if key != overviewCacheKey || cachedOverview==nil {
+                cachedOverview=OverviewConstellationLayout(tasks:tasks,previousOrder:overviewOrder,viewport:overviewViewport,seed:overviewSeed)
+                overviewCacheKey=key;layoutBuilds+=1
+            }
+            guard let layout=cachedOverview else{return}
+            overviewOrder=layout.order;shown=layout.items.compactMap{byID[$0.id]};overviewRoots=layout.roots;overviewRadii=layout.radii;overviewLabelRects=layout.labelRects;overviewFamilies=layout.families;universeExtents=layout.worldExtents
             for t in shown {guard var n=state[t.id],let p=layout.positions[t.id] else{continue};n.target=p;if n.radius==0{n.position=p;n.radius=layout.radii[t.id] ?? 0.04};state[t.id]=n}
             return
         }

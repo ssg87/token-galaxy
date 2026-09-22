@@ -324,9 +324,11 @@ func runFamilyOverviewChecks() throws {
     let model=GalaxyModel();model.overviewLayout=true;model.setOverviewViewport(SIMD2(1080,370));model.update(tasks,deltas:[:],events:[:]);model.step(0.1)
     try validationCheck(model.nodes.count==160 && model.overviewRoots.count==33 && model.links.count==127,"Overview omitted task families or relationships")
     try validationCheck(model.nodes.count*MemoryLayout<GalaxyGPU>.stride>4096 && model.links.count*MemoryLayout<LinkGPU>.stride>4096,"Large-buffer fixture is too small")
+    let builds=model.layoutBuilds
     let ids=model.shown.map{$0.id},positions=model.nodes.map{$0.space}
     model.selected="main-17";model.update(Array(tasks.reversed()),deltas:[:],events:[:])
     try validationCheck(model.shown.map{$0.id}==ids && model.nodes.map{$0.space}==positions,"Selection/refresh rearranged family cells")
+    try validationCheck(model.layoutBuilds==builds,"Selection/ordinary refresh rebuilt expensive placement")
     for t in model.shown {
         guard let i=model.shown.firstIndex(where:{$0.id==t.id}) else{continue}
         let node=model.nodes[i]

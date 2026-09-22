@@ -21,7 +21,7 @@ final class StarField: NSView, MTKViewDelegate {
     var isStrip = false
     var isOverview = false {didSet{model.overviewLayout=isOverview;configureFrameDriver();updateOverviewLabels()}}
     var paused = false { didSet { guard paused != oldValue else{return}; lastFrame=0; metal?.isPaused=isOverview || paused; metal?.draw() } }
-    var selected: String? { didSet { model.selected = selected;updateOverviewLabels() } }
+    var selected: String? { didSet { if selected != oldValue{model.selected = selected;updateOverviewLabels()} } }
     var claudeLogoScale:Float = { let v=UserDefaults.standard.double(forKey:"claudeLogoScale");return v>0 ? Float(min(1.6,max(0.8,v))):1.4 }()
     private var resizeSteps=OrbResizeSteps()
     var animateAmbient = true

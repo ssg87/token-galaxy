@@ -226,7 +226,14 @@ extension AppController {
         try validationCheck(v.field.paused && v.field.model.nodes[0].motion.x==frozen,"Overview ignored deliberate pause")
         v.motionPaused=false;RunLoop.current.run(until:Date(timeIntervalSinceNow:0.3));try validationCheck(v.field.model.nodes[0].motion.x>frozen,"Overview did not resume")
         v.window.performClose(nil);try validationCheck(v.field.paused,"Closed overview kept rendering")
-        RunLoop.current.run(until:Date(timeIntervalSinceNow:0.3));v.show();let before=v.field.diagnostics()["frames"] ?? 0;RunLoop.current.run(until:Date(timeIntervalSinceNow:0.4));try validationCheck(!v.field.paused && (v.field.diagnostics()["frames"] ?? 0)>before,"Reopened overview: paused=\(v.field.paused), visible=\(v.window.isVisible), frames=\(v.field.diagnostics()["frames"] ?? 0), before=\(before)")
+        let hiddenUpdates=v.field.runtimeEvidence()["updates"] as? Int ?? -1
+        let oldTokens=v.field.model.receivedTokens
+        var changed=samples;changed[0].total+=1234
+        for _ in 0..<8{v.update(changed,observed:[p.id:1234],increments:[p.id:1234],events:[:])}
+        try validationCheck(v.field.runtimeEvidence()["updates"] as? Int==hiddenUpdates,"Hidden overview performed visual refreshes")
+        RunLoop.current.run(until:Date(timeIntervalSinceNow:0.3));v.show()
+        try validationCheck(v.field.model.shown.first{$0.id==p.id}?.total==changed[0].total && v.field.model.receivedTokens==oldTokens,"Reopen missed latest totals or replayed hidden increments")
+        let before=v.field.diagnostics()["frames"] ?? 0;RunLoop.current.run(until:Date(timeIntervalSinceNow:0.4));try validationCheck(!v.field.paused && (v.field.diagnostics()["frames"] ?? 0)>before,"Reopened overview: paused=\(v.field.paused), visible=\(v.window.isVisible), frames=\(v.field.diagnostics()["frames"] ?? 0), before=\(before)")
         v.window.performClose(nil)
         print("PASS: live overview frames/rotation progress through refresh; active child; pause/resume; close/reopen; synthetic screenshot")
     }

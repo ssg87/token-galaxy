@@ -6,6 +6,7 @@ final class OverviewController:NSObject,NSOutlineViewDataSource,NSOutlineViewDel
     let outline=NSOutlineView()
     let project=NSPopUpButton()
     let provider=NSPopUpButton()
+    private var deferredRefresh=false
     private var providerKey="",providerWidth:NSLayoutConstraint?
     let summary=NSTextField(labelWithString:"")
     var onSelect:((String)->Void)?
@@ -35,16 +36,18 @@ final class OverviewController:NSObject,NSOutlineViewDataSource,NSOutlineViewDel
             scroll.topAnchor.constraint(equalTo:field.bottomAnchor,constant:8),scroll.leadingAnchor.constraint(equalTo:root.leadingAnchor,constant:14),scroll.trailingAnchor.constraint(equalTo:root.trailingAnchor,constant:-14),scroll.bottomAnchor.constraint(equalTo:note.topAnchor,constant:-10),note.leadingAnchor.constraint(equalTo:root.leadingAnchor,constant:18),note.trailingAnchor.constraint(lessThanOrEqualTo:root.trailingAnchor,constant:-18),note.bottomAnchor.constraint(equalTo:root.bottomAnchor,constant:-12)
         ]);window.center()
     }
-    func show(){window.makeKeyAndOrderFront(nil);field.paused=motionPaused;NSApp.activate(ignoringOtherApps:true)}
+    func show(){window.makeKeyAndOrderFront(nil);flushDeferred();field.paused=motionPaused;NSApp.activate(ignoringOtherApps:true)}
     func windowWillClose(_ notification:Notification){field.paused=true}
     func windowDidMiniaturize(_ notification:Notification){field.paused=true}
-    func windowDidDeminiaturize(_ notification:Notification){field.paused=motionPaused}
+    func windowDidDeminiaturize(_ notification:Notification){flushDeferred();field.paused=motionPaused}
     @objc func changeProvider(){reload()}
     @objc func changeProject(){filter=project.selectedItem?.representedObject as? String ?? "";reload()}
     @objc func reshuffleUniverse(){field.reshuffleOverview()}
     @objc func resetFilter(){filter="";project.selectItem(at:0);reload()}
-    func update(_ items:[TaskUsage],observed:[String:Int64],increments:[String:Int64],events:[String:[WorkEvent]]=[:]){
+    func update(_ items:[TaskUsage],observed:[String:Int64],increments:[String:Int64],events:[String:[WorkEvent]]=[:],renderHidden:Bool=false){
         records=items;deltas=observed
+        guard renderHidden || (window.isVisible && !window.isMiniaturized) else{deferredRefresh=true;return}
+        deferredRefresh=false
         let sources=[UsageProvider.codex,.claude].filter{p in items.contains{$0.provider==p}},sourceKey=sources.map{$0.rawValue}.joined(separator:",")
         if sourceKey != providerKey || provider.numberOfItems==1 {
             let selected=provider.selectedItem?.representedObject as? String ?? "";providerKey=sourceKey;provider.removeAllItems();provider.addItem(withTitle:"全部来源");provider.lastItem?.representedObject=""
@@ -55,6 +58,11 @@ final class OverviewController:NSObject,NSOutlineViewDataSource,NSOutlineViewDel
         let paths=Array(Set(items.map{$0.projectPath})).sorted(),key=paths.joined(separator:"|")
         if key != projectKey{projectKey=key;project.removeAllItems();project.addItem(withTitle:"全部项目");project.lastItem?.representedObject="";for path in paths{project.addItem(withTitle:URL(fileURLWithPath:path).lastPathComponent);project.lastItem?.representedObject=path};if let i=project.itemArray.firstIndex(where:{$0.representedObject as? String==filter}){project.selectItem(at:i)}else{filter=""}}
         reload(increments:increments,events:events)
+    }
+    private func flushDeferred(){
+        guard deferredRefresh else{return}
+        field.model.resumeSnapshot(records)
+        update(records,observed:deltas,increments:[:],renderHidden:true)
     }
     private func reload(increments:[String:Int64]=[:],events:[String:[WorkEvent]]=[:]){
         let selectedID=field.selected ?? (outline.selectedRow>=0 ? (outline.item(atRow:outline.selectedRow) as? AgentNode)?.task.id:nil)
@@ -76,6 +84,7 @@ final class OverviewController:NSObject,NSOutlineViewDataSource,NSOutlineViewDel
         updating=false
     }
     func previewImage()->NSImage?{
+        flushDeferred()
         guard let root=window.contentView else{return nil};root.layoutSubtreeIfNeeded()
         guard let bitmap=root.bitmapImageRepForCachingDisplay(in:root.bounds) else{return nil};root.cacheDisplay(in:root.bounds,to:bitmap)
         let image=NSImage(size:root.bounds.size);image.lockFocus();bitmap.draw(in:root.bounds)
