@@ -26,7 +26,7 @@ The current application interface is Chinese. English localization is a future i
 
 ## Requirements
 
-macOS 15 or later, Metal-capable graphics, and Apple Command Line Tools for source builds (`xcode-select --install`). No package manager dependencies. Local sessions from Codex, Claude Code, or both supply the data; having both tools installed is optional.
+macOS 15 or later, Metal-capable graphics, and Apple Command Line Tools for source builds (`xcode-select --install`). No package manager dependencies. The first source build downloads the pinned Sparkle framework from its official GitHub release and verifies its SHA-256 checksum. Local sessions from Codex, Claude Code, or both supply the data; having both tools installed is optional.
 
 Intel runtime is tested. Apple Silicon builds are cross-compiled but need native runtime validation.
 
@@ -45,7 +45,7 @@ The repository includes its marketplace at `.agents/plugins/marketplace.json`. S
 
 ## Run as a standalone app
 
-The [Releases page](https://github.com/ssg87/token-galaxy/releases) currently provides the 0.7.0 universal app. The newer family overview described here is available through a source build or the Codex plugin. It contains Intel and Apple Silicon binaries; it is ad-hoc signed and not notarized. Source builds remain available below.
+Download the current universal app from [Releases](https://github.com/ssg87/token-galaxy/releases/latest). Version 0.9.0 introduces in-app updates and includes all preceding visual and performance fixes. It contains Intel and Apple Silicon binaries; it is ad-hoc signed and not notarized. Sparkle update signatures authenticate our releases; they are separate from Apple notarization.
 
 ```sh
 git clone https://github.com/ssg87/token-galaxy.git
@@ -55,6 +55,12 @@ open 'plugins/token-galaxy/Outputs/Token Galaxy.app'
 ```
 
 You can copy the resulting app into Applications. Source builds use an ad-hoc signature, not an Apple Developer ID signature or notarization. The app is independent of the Codex plugin after building.
+
+## Updates
+
+Right-click the orb or open the sparkles menu. Between Data Information and Quit, **检查更新…** checks for a release immediately; **自动更新** enables/disables automatic checks and installation together. Automatic updates are enabled by default and checked daily. Sparkle downloads and verifies signed updates, then installs when possible; it may ask to relaunch or for permission when needed. Offline checks do not stop the orb.
+
+Only published stable releases appear in the signed feed. A source commit alone is not an update. Existing versions through 0.8.6 need a one-time manual upgrade to 0.9.0; subsequent releases use the updater. Preferences and local session files are retained. Update requests go to GitHub; session content and usage totals are not uploaded. See [release maintenance](docs/RELEASING.md).
 
 ## Using the orb
 

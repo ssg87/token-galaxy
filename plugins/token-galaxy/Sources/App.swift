@@ -2,6 +2,7 @@ import AppKit
 import QuartzCore
 final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMenuDelegate,NSWindowDelegate {
     let reader=TelemetryReader(),queue=DispatchQueue(label:"local.token-galaxy.read",qos:.utility)
+    let appUpdater=AppUpdater()
     var hasTouchBar=HardwareCapabilities.touchBarAvailable
     var emptyNotice:NSTextField?
     private var previousProviderUI=[UsageProvider]()
@@ -48,6 +49,7 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
         NSWorkspace.shared.notificationCenter.addObserver(self,selector:#selector(waking),name:NSWorkspace.screensDidWakeNotification,object:nil)
         NotificationCenter.default.addObserver(self,selector:#selector(activeChanged),name:NSApplication.didBecomeActiveNotification,object:nil)
         NotificationCenter.default.addObserver(self,selector:#selector(activeChanged),name:NSApplication.didResignActiveNotification,object:nil)
+        if probeDirectory==nil{appUpdater.start()}
     }
     func applicationShouldHandleReopen(_ sender:NSApplication,hasVisibleWindows flag:Bool)->Bool{visible=true;panel.orderFrontRegardless();syncMotion();return true}
     func makeWindow(){
@@ -79,9 +81,9 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
         switcher.submenu=conversations;menu.addItem(switcher)
         let hint=NSMenuItem(title:"闲置 1 分钟后自动跟随最快主对话",action:nil,keyEquivalent:"");menu.addItem(hint);menu.addItem(.separator())
         let actions:[(String,Selector)]=[("查看用量详情",#selector(showDetails)),("打开任务与代理工作总览",#selector(showOverview)),("用量与动效对照",#selector(showMapping)),("圆球大小与透明度…",#selector(showAppearance)),("返回全部任务",#selector(clearSelection)),(visible ? "隐藏圆球":"显示圆球",#selector(toggleWindow)),(paused ? "继续星河":"暂停星河",#selector(toggleAnimation)),("激活 Touch Bar 流动星河",#selector(activateBar)),("数据说明",#selector(showInfo)),("退出",#selector(quit))]
-        for (name,action) in actions{if action == #selector(activateBar) && !hasTouchBar{continue};let i=NSMenuItem(title:name,action:action,keyEquivalent:action == #selector(quit) ? "q":"");i.target=self;menu.addItem(i)};return menu
+        for (name,action) in actions{if action == #selector(quit){appUpdater.appendMenuItems(to:menu)};if action == #selector(activateBar) && !hasTouchBar{continue};let i=NSMenuItem(title:name,action:action,keyEquivalent:action == #selector(quit) ? "q":"");i.target=self;menu.addItem(i)};return menu
     }
-    func menuWillOpen(_ menu:NSMenu){openMenus+=1;recordInteraction();for i in menu.items{if i.action == #selector(toggleWindow){i.title=visible ? "隐藏圆球":"显示圆球"};if i.action == #selector(toggleAnimation){i.title=paused ? "继续星河":"暂停星河"}}}
+    func menuWillOpen(_ menu:NSMenu){appUpdater.refreshMenu(menu);openMenus+=1;recordInteraction();for i in menu.items{if i.action == #selector(toggleWindow){i.title=visible ? "隐藏圆球":"显示圆球"};if i.action == #selector(toggleAnimation){i.title=paused ? "继续星河":"暂停星河"}}}
     func menuDidClose(_ menu:NSMenu){openMenus=max(0,openMenus-1);recordInteraction()}
     func recordInteraction(now:TimeInterval=ProcessInfo.processInfo.systemUptime){idleFocus.interact(now:now);selectionMode="manual"}
     func setSelection(_ id:String?){selected=id;scene.selected=id;touchScene?.selected=id;overview?.field.selected=id;updateLabels()}
@@ -276,7 +278,7 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
         do{
             try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
             let details=tasks.prefix(12).map{t->[String:Any] in ["provider":t.provider.rawValue,"taskID":t.id,"total":t.total,"lastUserAt":t.lastUserAt ?? 0,"lastEventAt":t.lastEventAt ?? 0,"contextInput":t.contextInput ?? -1,"contextLimit":t.contextLimit ?? -1,"state":t.stateLabel,"pendingBytes":t.pendingBytes]}
-            let value:[String:Any]=["version":"0.8.6","capabilities":["touchBar":hasTouchBar,"providers":visibleProviders.map{$0.rawValue}],"claudeLogoScale":Double(scene.claudeLogoScale),"codexTokens":codexUsage?.total ?? -1,"claudeTokens":claudeUsage?.total ?? -1,"codexRecords":codexUsage?.records ?? 0,"claudeRecords":claudeUsage?.records ?? 0,"sourceErrors":sourceErrors,"menuTotalTokens":allUsage?.total ?? -1,"menuIndexedTokens":allUsage?.indexedTotal ?? -1,"menuRecordCount":allUsage?.records ?? 0,"menuLogOverrides":allUsage?.logOverrides ?? 0,"menuTitle":status.button?.title ?? "","selectedTaskID":selected ?? "","selectionMode":selectionMode,"idleSeconds":max(0,ProcessInfo.processInfo.systemUptime-idleFocus.lastInteraction),"fastestMainConversationID":scene.model.fastestConversation(keeping:selected) ?? "","observationStartedAt":observationStartedAt,"detailsOpen":detailPopover?.isShown ?? false,"applicationActive":NSApp.isActive,"pid":ProcessInfo.processInfo.processIdentifier,"timestamp":now,"polls":sampleCount,"readOK":readOK,"sampleMS":lastSampleMS,"lastGoodRead":lastSampleAt,"scene":scene.runtimeEvidence(),"touchBar":touchScene?.runtimeEvidence() ?? [:],"overview":overview?.field.runtimeEvidence() ?? [:],"overviewVisible":overview?.window.isVisible ?? false,"overviewMinimized":overview?.window.isMiniaturized ?? false,"recentEvents":eventTrace,"recentRecords":details,"observedTokens":observed.values.reduce(0,+),"opacity":Double(panel.alphaValue),"screenSleeping":screenSleeping,"reduceMotion":NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,"probeFrames":probeFrame]
+            let value:[String:Any]=["version":Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "unknown","capabilities":["touchBar":hasTouchBar,"providers":visibleProviders.map{$0.rawValue}],"claudeLogoScale":Double(scene.claudeLogoScale),"codexTokens":codexUsage?.total ?? -1,"claudeTokens":claudeUsage?.total ?? -1,"codexRecords":codexUsage?.records ?? 0,"claudeRecords":claudeUsage?.records ?? 0,"sourceErrors":sourceErrors,"menuTotalTokens":allUsage?.total ?? -1,"menuIndexedTokens":allUsage?.indexedTotal ?? -1,"menuRecordCount":allUsage?.records ?? 0,"menuLogOverrides":allUsage?.logOverrides ?? 0,"menuTitle":status.button?.title ?? "","selectedTaskID":selected ?? "","selectionMode":selectionMode,"idleSeconds":max(0,ProcessInfo.processInfo.systemUptime-idleFocus.lastInteraction),"fastestMainConversationID":scene.model.fastestConversation(keeping:selected) ?? "","observationStartedAt":observationStartedAt,"detailsOpen":detailPopover?.isShown ?? false,"applicationActive":NSApp.isActive,"pid":ProcessInfo.processInfo.processIdentifier,"timestamp":now,"polls":sampleCount,"readOK":readOK,"sampleMS":lastSampleMS,"lastGoodRead":lastSampleAt,"scene":scene.runtimeEvidence(),"touchBar":touchScene?.runtimeEvidence() ?? [:],"overview":overview?.field.runtimeEvidence() ?? [:],"overviewVisible":overview?.window.isVisible ?? false,"overviewMinimized":overview?.window.isMiniaturized ?? false,"recentEvents":eventTrace,"recentRecords":details,"observedTokens":observed.values.reduce(0,+),"opacity":Double(panel.alphaValue),"screenSleeping":screenSleeping,"reduceMotion":NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,"probeFrames":probeFrame]
             let bytes=try JSONSerialization.data(withJSONObject:value,options:[.prettyPrinted,.sortedKeys])
             try bytes.write(to:folder.appendingPathComponent("status.json"),options:.atomic)
         }catch{status.button?.toolTip="运行诊断暂不可写；用量读取继续"}
@@ -323,6 +325,17 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
     }
     func uiSmoke()throws{
         func check(_ b:Bool,_ text:String)throws{if !b{throw NSError(domain:"UI",code:1,userInfo:[NSLocalizedDescriptionKey:text])}}
+        let updateMenu=makeContextMenu()
+        let titles=updateMenu.items.map{$0.title}
+        let checkIndex=titles.firstIndex(of:"检查更新…"),quitIndex=titles.firstIndex(of:"退出"),infoIndex=titles.firstIndex(of:"数据说明")
+        try check(checkIndex != nil && quitIndex != nil && infoIndex != nil && infoIndex!<checkIndex! && checkIndex!<quitIndex!,"Update menu is missing or misplaced")
+        guard let automatic=updateMenu.items.first(where:{$0.title=="自动更新"}) else{throw NSError(domain:"UI",code:1)}
+        let updateKeys=["SUEnableAutomaticChecks","SUAutomaticallyUpdate"],savedUpdates=updateKeys.map{UserDefaults.standard.object(forKey:$0)}
+        defer{for (i,key) in updateKeys.enumerated(){if let value=savedUpdates[i]{UserDefaults.standard.set(value,forKey:key)}else{UserDefaults.standard.removeObject(forKey:key)}}}
+        let autoBefore=appUpdater.enabled
+        appUpdater.toggleAutomatic(automatic);try check(appUpdater.enabled != autoBefore,"Automatic update switch did not change settings")
+        appUpdater.toggleAutomatic(automatic);try check(appUpdater.enabled==autoBefore,"Automatic update switch did not restore settings")
+        print("PASS: update controls precede Quit; automatic check/download settings toggle together")
         let originalTouchBar=hasTouchBar;hasTouchBar=true;panel.supportsTouchBar=true;defer{hasTouchBar=originalTouchBar;panel.supportsTouchBar=originalTouchBar}
         let f=panel.frame,old=UserDefaults.standard.object(forKey:"orbOpacity"),diameter=UserDefaults.standard.object(forKey:"orbDiameter"),savedLogo=UserDefaults.standard.object(forKey:"claudeLogoScale")
         defer{panel.setFrame(f,display:false);panel.saveFrame(usingName:"TokenGalaxyOrb");if let old=old{UserDefaults.standard.set(old,forKey:"orbOpacity")}else{UserDefaults.standard.removeObject(forKey:"orbOpacity")};if let diameter=diameter{UserDefaults.standard.set(diameter,forKey:"orbDiameter")}else{UserDefaults.standard.removeObject(forKey:"orbDiameter")};if let savedLogo=savedLogo{UserDefaults.standard.set(savedLogo,forKey:"claudeLogoScale")}else{UserDefaults.standard.removeObject(forKey:"claudeLogoScale")}}

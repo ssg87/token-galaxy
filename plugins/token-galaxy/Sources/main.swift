@@ -27,7 +27,7 @@ if CommandLine.arguments.contains("--self-test") {
     let next=TaskUsage(id:"a",title:"test",project:"test",total:125,input:115,cached:30,output:10,source:"event")
     guard usageDelta(nil,sample)==0,usageDelta(sample,sample)==0,usageDelta(sample,next)==25,usageDelta(next,sample)==0 else{fatalError("Delta tests failed")}
     do{
-        try runTelemetryChecks();try runVisualChecks()
+        try runTelemetryChecks();try runVisualChecks();try runUpdaterConfigurationChecks()
         print("PASS: fixture-only telemetry and visual checks; no personal data required");exit(0)}catch{fputs("FAIL: \(error)\n",stderr);exit(1)}
 }
 let app=NSApplication.shared

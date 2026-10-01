@@ -1,5 +1,9 @@
 # Changes
 
+## 0.9.0 — 2026-10-01
+
+Add a version label, Check for Updates and Automatic Updates between Data Information and Quit. Bundle pinned Sparkle 2.10.0, enable daily automatic checks/download/installation, and require Ed25519 signatures for both the feed and archive. Keep diagnostics/probes offline, preserve appearance and telemetry, and disable system-profile submission. Add universal release packaging, signed appcast generation, archive verification and a read-only signed-feed probe. Versions before 0.9.0 require one manual upgrade to bootstrap automatic updates.
+
 ## 0.8.6 — 2026-09-22
 
 Defer hidden/minimized overview UI and model refreshes, retaining only the latest records and observed totals. Restore current activity on reopening without replaying accumulated events or tokens. Cache organic placement across ordinary refreshes and selection changes, invalidating for topology, size tier, viewport or reshuffle changes. Keep fresh task metadata even when geometry is reused, and skip redundant selection assignments. Native checks cover hidden refresh suppression and latest-state restoration; model checks cover layout reuse and existing motion/accounting behavior.

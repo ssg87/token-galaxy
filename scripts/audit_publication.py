@@ -7,7 +7,7 @@ assert any(files), 'Run after staging the public files'
 bad=[]
 for name in filter(None,files):
  p=root/name
- if any(x in p.parts for x in ('Outputs','Backups','__pycache__')) or p.suffix in ('.sqlite','.db','.jsonl'):
+ if any(x in p.parts for x in ('Outputs','Backups','__pycache__')) or p.suffix in ('.sqlite','.db','.jsonl','.key','.pem','.p12','.pfx'):
   bad.append(name+': private/generated artifact')
  data=p.read_bytes()
  if re.search(rb'/Users/[A-Za-z0-9_.-]+/',data):bad.append(name+': personal absolute path')
