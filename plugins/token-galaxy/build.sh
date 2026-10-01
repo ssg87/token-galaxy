@@ -17,12 +17,15 @@ cat > "$OUT/Contents/Info.plist" <<PLIST
 <key>CFBundleExecutable</key><string>TokenGalaxy</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleVersion</key><string>36</string>
-<key>CFBundleShortVersionString</key><string>0.9.0</string>
+<key>CFBundleVersion</key><string>37</string>
+<key>CFBundleShortVersionString</key><string>0.9.1</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>SUFeedURL</key><string>https://github.com/ssg87/token-galaxy/releases/latest/download/appcast.xml</string>
 <key>SUPublicEDKey</key><string>$UPDATE_KEY</string>
 <key>SURequireSignedFeed</key><true/>
+<key>SUVerifyUpdateBeforeExtraction</key><true/>
+<key>SUSignedFeedFailureExpirationInterval</key><integer>0</integer>
+<key>SUEnableSystemProfiling</key><false/>
 <key>SUEnableAutomaticChecks</key><true/>
 <key>SUAutomaticallyUpdate</key><true/>
 <key>SUScheduledCheckInterval</key><integer>86400</integer>

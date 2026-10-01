@@ -41,7 +41,7 @@ codex plugin add token-galaxy@token-galaxy
 
 ## 作为独立 Mac 应用运行
 
-[Releases](https://github.com/ssg87/token-galaxy/releases/latest) 提供最新 Intel / Apple Silicon 通用应用包。0.9.0 开始支持应用内升级，并包含此前的视觉和性能优化。安装包仍使用本地临时代码签名，尚未进行 Apple 公证；Sparkle 更新签名用于验证发布来源，不等同于 Apple 公证。
+[Releases](https://github.com/ssg87/token-galaxy/releases/latest) 提供最新 Intel / Apple Silicon 通用应用包。0.9.1 开始支持应用内升级，并包含此前的视觉和性能优化。安装包仍使用本地临时代码签名，尚未进行 Apple 公证；Sparkle 更新签名用于验证发布来源，不等同于 Apple 公证。
 
 ```sh
 git clone https://github.com/ssg87/token-galaxy.git
@@ -70,4 +70,4 @@ open 'plugins/token-galaxy/Outputs/Token Galaxy.app'
 
 自动更新默认开启，每天检查正式发布的新版，下载并校验签名后由 Sparkle 安排安装；需要重开应用或授权时会提示。关闭开关后仍可手动检查。离线时继续使用当前版本，不影响本地用量读取。升级保留大小、透明度等偏好，不修改会话文件。
 
-0.8.6 及更早版本需要先手动升级一次到 0.9.0，此后可使用自动升级。只推源码不会触发升级，必须发布带签名的新安装包和更新清单。更新请求连接 GitHub，不上传聊天内容和用量。源码首次构建会下载固定版本 Sparkle 并校验 SHA-256。发布维护方法见 [RELEASING.md](docs/RELEASING.md)。
+0.8.6 及更早版本需要先手动升级一次到 0.9.1，此后可使用自动升级。只推源码不会触发升级，必须发布带签名的新安装包和更新清单。更新请求连接 GitHub，不上传聊天内容和用量。源码首次构建会下载固定版本 Sparkle 并校验 SHA-256。发布维护方法见 [RELEASING.md](docs/RELEASING.md)。

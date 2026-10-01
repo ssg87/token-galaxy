@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build and sign a universal Sparkle release. Does not push or publish anything."""
 from pathlib import Path
-import argparse, hashlib, json, os, plistlib, shutil, subprocess, xml.etree.ElementTree as ET
+import argparse, hashlib, json, os, plistlib, shutil, subprocess, sys, xml.etree.ElementTree as ET
 ROOT=Path(__file__).resolve().parents[1]
 PLUGIN=ROOT/'plugins/token-galaxy'
 def run(args,**kw):
@@ -42,6 +42,7 @@ def main():
     run(['lipo','-create',*[builds[a]/'Contents/MacOS/TokenGalaxy' for a in ['x86_64','arm64']],'-output',app/'Contents/MacOS/TokenGalaxy'])
     run(['codesign','--force','--sign','-',app]);run(['codesign','--verify','--deep','--strict',app])
     run([app/'Contents/MacOS/TokenGalaxy','--self-test'])
+    run([sys.executable,ROOT/'scripts/check_updater.py','--app',app])
     archive=assets/('Token-Galaxy-'+version+'-universal.zip')
     run(['ditto','-c','-k','--sequesterRsrc','--keepParent',app,archive])
     notes=args.notes.read_text() if args.notes else 'Token Galaxy '+version+'\nSee the repository changelog for details.'

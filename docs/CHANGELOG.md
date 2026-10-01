@@ -1,6 +1,10 @@
 # Changes
 
-## 0.9.0 — 2026-10-01
+## 0.9.1 — 2026-10-01
+
+Enable Sparkle’s required pre-extraction verification alongside signed feeds, disable signed-feed validation expiry, and verify updater startup in an isolated bundle before publishing. 0.9.0 was withdrawn to draft after a live probe found the missing prerequisite; it was not installed locally.
+
+## 0.9.0 — 2026-10-01 (withdrawn)
 
 Add a version label, Check for Updates and Automatic Updates between Data Information and Quit. Bundle pinned Sparkle 2.10.0, enable daily automatic checks/download/installation, and require Ed25519 signatures for both the feed and archive. Keep diagnostics/probes offline, preserve appearance and telemetry, and disable system-profile submission. Add universal release packaging, signed appcast generation, archive verification and a read-only signed-feed probe. Versions before 0.9.0 require one manual upgrade to bootstrap automatic updates.
 

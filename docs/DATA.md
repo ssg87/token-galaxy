@@ -1,6 +1,6 @@
 # Local data and privacy
 
-Token Galaxy performs local, read-only telemetry. It has no analytics uploader or account login. From 0.9.0, the bundled Sparkle updater requests a signed release feed and update archives from GitHub over HTTPS. GitHub receives ordinary network request metadata (such as IP address and updater User-Agent); session contents, task names, token counts and the local status file are not included. Sparkle system-profile submission is disabled. Automatic updates can be disabled in the menu; manual checks remain available. Plugin installation and the pinned Sparkle build dependency also use GitHub.
+Token Galaxy performs local, read-only telemetry. It has no analytics uploader or account login. From 0.9.1, the bundled Sparkle updater requests a signed release feed and update archives from GitHub over HTTPS. GitHub receives ordinary network request metadata (such as IP address and updater User-Agent); session contents, task names, token counts and the local status file are not included. Sparkle system-profile submission is disabled. Automatic updates can be disabled in the menu; manual checks remain available. Plugin installation and the pinned Sparkle build dependency also use GitHub.
 
 ## Codex
 

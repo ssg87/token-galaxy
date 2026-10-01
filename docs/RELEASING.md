@@ -23,9 +23,9 @@ Sparkle signatures are independent of Apple code signing/notarization. Current b
    `--reuse-native` requires a freshly built/tested native app. Omit it to rebuild both architectures. The script refuses stale versions or mismatched architecture metadata, verifies signatures against the embedded public key, and never publishes. Assets are written to the ignored `Outputs/release-VERSION/assets` directory. Existing assets are not overwritten.
 4. Create a **draft** GitHub release targeting the tested commit. Upload the universal zip, `appcast.xml` and `SHA256SUMS.txt`. Do not change an archive or signed appcast after signing.
 5. Check the release commit, assets and checksums, then publish it as the latest stable release. The fixed feed URL is `https://github.com/ssg87/token-galaxy/releases/latest/download/appcast.xml`; every new stable release must include the feed asset. A source push alone does not trigger updates.
-6. Verify the live feed and archive. Use `Tests/update_feed_probe.swift` with an isolated copy whose bundle identifier ends in `.update-test`, never the installed app. Setting that copy's build one lower should report `available`; an equal build should report `up-to-date`. Automatic download/install is disabled in the probe, so it cannot replace the installed application.
+6. Verify the live feed and archive. `python3 scripts/check_updater.py --app "/path/to/Token Galaxy.app"` checks SDK startup offline. Add `--online --build-offset -1` to verify that an older build sees the release, then use `--online` alone to verify that the current build is up to date. The script uses isolated bundles ending in `.update-test`, disables automatic downloading/installing, and never starts or replaces the installed app. Packaging and CI run the offline startup check before publication.
 
-The appcast is also signed (`SURequireSignedFeed`). `generate_appcast` handles its signature. The `sign_update --verify` tool can validate both appcast and archive; the independent `scripts/verify_update_archive.swift` validates archives with the app's public key. A tampered archive must fail verification.
+The appcast is also signed (`SURequireSignedFeed`), with its required `SUVerifyUpdateBeforeExtraction` prerequisite and non-expiring signature validation. `generate_appcast` handles its signature. The `sign_update --verify` tool can validate both appcast and archive; the independent `scripts/verify_update_archive.swift` validates archives with the app's public key. A tampered archive must fail verification.
 
 ## User behavior
 
@@ -33,4 +33,4 @@ The appcast is also signed (`SURequireSignedFeed`). `generate_appcast` handles i
 
 ## Bootstrap
 
-0.9.0 is the first version containing Sparkle. Users on 0.8.6 or earlier must install it once manually; publishing a feed cannot retrofit an updater into those old binaries. Intel runtime is tested; the universal arm64 slice is built and inspected but still needs native Apple Silicon runtime testing.
+0.9.1 is the first version containing Sparkle. Users on 0.8.6 or earlier must install it once manually; publishing a feed cannot retrofit an updater into those old binaries. Intel runtime is tested; the universal arm64 slice is built and inspected but still needs native Apple Silicon runtime testing.
