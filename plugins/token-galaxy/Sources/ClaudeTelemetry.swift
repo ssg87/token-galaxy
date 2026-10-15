@@ -5,8 +5,10 @@ enum UsageProvider:String { case codex,claude
 }
 private struct ClaudeCount {
     var input:Int64=0,write:Int64=0,read:Int64=0,output:Int64=0
+    var inputKnown=true,outputKnown=true,cacheKnown=true
     var total:Int64{input+write+read+output}
-    mutating func merge(_ other:ClaudeCount){input=max(input,other.input);write=max(write,other.write);read=max(read,other.read);output=max(output,other.output)}
+    var complete:Bool{inputKnown && outputKnown && cacheKnown}
+    mutating func merge(_ other:ClaudeCount){input=max(input,other.input);write=max(write,other.write);read=max(read,other.read);output=max(output,other.output);inputKnown=inputKnown || other.inputKnown;outputKnown=outputKnown || other.outputKnown;cacheKnown=cacheKnown || other.cacheKnown}
 }
 private struct ClaudeRequest { var owner:String;var count:ClaudeCount;var at:TimeInterval }
 final class ClaudeTelemetryReader {
@@ -50,8 +52,12 @@ final class ClaudeTelemetryReader {
         if kind=="assistant" {
             if let usage=message["usage"] as? [String:Any],let mid=message["id"] as? String {
                 let req=d["requestId"] as? String ?? mid,key="\(req):\(mid)"
+                func known(_ name:String)->Bool{guard let n=usage[name] as? NSNumber else{return false};return n.int64Value>=0}
                 func n(_ name:String)->Int64{max(0,(usage[name] as? NSNumber)?.int64Value ?? 0)}
-                let count=ClaudeCount(input:n("input_tokens"),write:n("cache_creation_input_tokens"),read:n("cache_read_input_tokens"),output:n("output_tokens"))
+                // Cache fields are optional in Claude usage records and omitted caches mean zero.
+                // Required input/output fields remain unknown until a complete update of this request.
+                let cacheKnown=["cache_creation_input_tokens","cache_read_input_tokens"].allSatisfy{usage[$0]==nil || known($0)}
+                let count=ClaudeCount(input:n("input_tokens"),write:n("cache_creation_input_tokens"),read:n("cache_read_input_tokens"),output:n("output_tokens"),inputKnown:known("input_tokens"),outputKnown:known("output_tokens"),cacheKnown:cacheKnown)
                 var entry=file.requests[key] ?? ClaudeRequest(owner:owner,count:count,at:at ?? 0);entry.count.merge(count);entry.at=max(entry.at,at ?? 0);file.requests[key]=entry
                 task.contextInput=count.input+count.write+count.read;task.lastUsageAt=at;task.segmentFirstAt=min(task.segmentFirstAt ?? at ?? 0,at ?? 0)
             }
@@ -121,18 +127,23 @@ final class ClaudeTelemetryReader {
         var requests=[String:ClaudeRequest](),tasks=[String:TaskUsage]()
         for (_,f) in files.sorted(by:{$0.key<$1.key}) {
             for (id,t) in f.tasks {
+                let pending=Int64(f.carry.count)+(f.skipping ? 1:0)
                 if var old=tasks[id]{
+                    let previousPending=old.pendingBytes
+                    let previousIssue=old.readIssue
                     let events=Dictionary((old.events+t.events).map{($0.id,$0)},uniquingKeysWith:{a,b in a.at>b.at ? a:b}).values.sorted{$0.at<$1.at}
-                    if (t.lastEventAt ?? 0)>(old.lastEventAt ?? 0){old=t};old.events=Array(events.suffix(64));if let issue=f.issue{old.readIssue=issue};tasks[id]=old
-                }else{var copy=t;copy.readIssue=f.issue;tasks[id]=copy}
+                    if (t.lastEventAt ?? 0)>(old.lastEventAt ?? 0){old=t};old.events=Array(events.suffix(64));old.readIssue=previousIssue ?? f.issue;old.pendingBytes=max(previousPending,pending);tasks[id]=old
+                }else{var copy=t;copy.readIssue=f.issue;copy.pendingBytes=pending;tasks[id]=copy}
             }
             for (key,value) in f.requests{if var old=requests[key]{old.count.merge(value.count);old.at=max(old.at,value.at);requests[key]=old}else{requests[key]=value}}
         }
         var sums=[String:ClaudeCount]()
-        for r in requests.values{var n=sums[r.owner] ?? ClaudeCount();n.input+=r.count.input;n.write+=r.count.write;n.read+=r.count.read;n.output+=r.count.output;sums[r.owner]=n}
+        for r in requests.values{var n=sums[r.owner] ?? ClaudeCount();n.input+=r.count.input;n.write+=r.count.write;n.read+=r.count.read;n.output+=r.count.output;n.inputKnown=n.inputKnown && r.count.inputKnown;n.outputKnown=n.outputKnown && r.count.outputKnown;n.cacheKnown=n.cacheKnown && r.count.cacheKnown;sums[r.owner]=n}
         var result=[TaskUsage]()
         for (id,var task) in tasks {
-            let n=sums[id] ?? ClaudeCount();task.total=n.total;task.input=n.input+n.write+n.read;task.cached=n.read;task.cacheWrite=n.write;task.output=n.output;result.append(task)
+            if let n=sums[id]{task.total=n.total;task.input=n.inputKnown && n.cacheKnown ? n.input+n.write+n.read:nil;task.cached=n.cacheKnown ? n.read:nil;task.cacheWrite=n.cacheKnown ? n.write:nil;task.output=n.outputKnown ? n.output:nil;task.usageTotalComplete=n.complete}
+            else{task.total=0;task.input=nil;task.cached=nil;task.cacheWrite=nil;task.output=nil;task.usageTotalComplete=false}
+            result.append(task)
         }
         allUsage=AllUsage(total:requests.values.reduce(0){$0+$1.count.total},indexedTotal:0,records:result.count,logOverrides:result.count)
         return result.sorted{($0.lastEventAt ?? 0)>($1.lastEventAt ?? 0)}

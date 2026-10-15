@@ -4,14 +4,16 @@ import Sparkle
 /// The updater only contacts the public release feed; telemetry stays local.
 final class AppUpdater:NSObject {
     static let feedURL="https://github.com/ssg87/token-galaxy/releases/latest/download/appcast.xml"
-    let controller=SPUStandardUpdaterController(startingUpdater:false,updaterDelegate:nil,userDriverDelegate:nil)
+    // Preview builds never instantiate Sparkle, so persisted updater preferences cannot start it.
+    private lazy var controller:SPUStandardUpdaterController? = TokenGalaxyRuntime.isPreview ? nil:SPUStandardUpdaterController(startingUpdater:false,updaterDelegate:nil,userDriverDelegate:nil)
     private var started=false
-    var enabled:Bool {controller.updater.automaticallyChecksForUpdates && controller.updater.automaticallyDownloadsUpdates}
-    func start(){guard !started else{return};started=true;controller.startUpdater()}
+    var enabled:Bool {guard let controller=controller else{return false};return controller.updater.automaticallyChecksForUpdates && controller.updater.automaticallyDownloadsUpdates}
+    func start(){guard !TokenGalaxyRuntime.isPreview,!started,let controller=controller else{return};started=true;controller.startUpdater()}
     func appendMenuItems(to menu:NSMenu){
         menu.addItem(.separator())
         let version=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "未知"
-        menu.addItem(NSMenuItem(title:"Token 星河 \(version)",action:nil,keyEquivalent:""))
+        menu.addItem(NSMenuItem(title:"Token 星河 \(version)\(TokenGalaxyRuntime.isPreview ? " · 隔离预览":"")",action:nil,keyEquivalent:""))
+        if TokenGalaxyRuntime.isPreview{menu.addItem(NSMenuItem(title:"更新已禁用（隔离预览）",action:nil,keyEquivalent:""));menu.addItem(.separator());return}
         let check=NSMenuItem(title:"检查更新…",action:#selector(SPUStandardUpdaterController.checkForUpdates(_:)),keyEquivalent:"")
         check.target=controller;menu.addItem(check)
         let automatic=NSMenuItem(title:"自动更新",action:#selector(toggleAutomatic(_:)),keyEquivalent:"")
@@ -23,6 +25,7 @@ final class AppUpdater:NSObject {
         for item in menu.items where item.action == #selector(toggleAutomatic(_:)){item.state=enabled ? .on:.off}
     }
     @objc func toggleAutomatic(_ sender:NSMenuItem){
+        guard !TokenGalaxyRuntime.isPreview,let controller=controller else{sender.state = .off;return}
         let turnOn = !enabled
         // Sparkle only accepts automatic downloads after automatic checks are enabled.
         controller.updater.automaticallyChecksForUpdates=turnOn
@@ -40,8 +43,14 @@ func runUpdaterConfigurationChecks() throws {
     try require(info["SUVerifyUpdateBeforeExtraction"] as? Bool==true,"Archive verification prerequisite missing")
     try require(info["SUSignedFeedFailureExpirationInterval"] as? Int==0,"Signed feed requirement can expire")
     try require(info["SUEnableSystemProfiling"] as? Bool==false,"System profiling enabled")
-    try require(info["SUEnableAutomaticChecks"] as? Bool==true && info["SUAutomaticallyUpdate"] as? Bool==true,"Automatic update defaults missing")
+    let preview=info["CFBundleIdentifier"] as? String==TokenGalaxyRuntime.previewBundleID
+    if preview{
+        try require(info["SUEnableAutomaticChecks"] as? Bool==false && info["SUAutomaticallyUpdate"] as? Bool==false,"Preview updater must be disabled")
+        try require(!AppUpdater().enabled,"Preview must not instantiate an enabled updater")
+    }else{
+        try require(info["SUEnableAutomaticChecks"] as? Bool==true && info["SUAutomaticallyUpdate"] as? Bool==true,"Automatic update defaults missing")
+    }
     try require(info["SUSendProfileInfo"] as? Bool==false,"System profile upload enabled")
     try require(Bundle.main.privateFrameworksURL.map{FileManager.default.fileExists(atPath:$0.appendingPathComponent("Sparkle.framework/Sparkle").path)}==true,"Updater framework not bundled")
-    print("PASS: signed HTTPS update feed, bundled updater, automatic defaults, no profile upload")
+    print(preview ? "PASS: explicit preview bundle, updater checks/downloads disabled, signing prerequisites retained":"PASS: signed HTTPS update feed, bundled updater, automatic defaults, no profile upload")
 }

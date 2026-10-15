@@ -68,6 +68,8 @@ Click a conversation to inspect its local count. Right-click the orb or use the 
 
 Only locally observed activity drives new-token motion. The app cannot tell you remaining plan quota, reset time, or billable spend. See [the exact data scope](docs/DATA.md).
 
+Version 0.10.0 source/local builds include **Token speed** in the app menu and a self-contained `token-speed` skill. With 0.10.0 installed, run `plugins/token-galaxy/skills/token-speed/scripts/token_speed.sh show` to open its native window in the existing app process, or `sample --seconds 15 --window 10 --provider all` for JSON. The monitor uses 10/30/60-second windows of local log deltas; delayed writes can cause spikes, so it does not measure exact model generation tokens/s. This source version does not by itself publish a 0.10.0 update archive. See [Token speed usage and measurement details](docs/token-speed.md).
+
 ## Development and checks
 
 ```sh

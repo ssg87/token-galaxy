@@ -1,5 +1,9 @@
 # Changes
 
+## 0.10.0 — source/local build (not published)
+
+Add the native Token speed window, 10/30/60-second observed-rate windows, per-provider/task filters, gap-aware trends and bounded JSON sampling. A self-contained skill opens the installed app through `token-galaxy://speed`, reusing its GUI process; first-read time is separate from requested observation time. Keep the isolated development preview available. This entry records the source/local build, not a published automatic-update archive or release tag.
+
 ## 0.9.1 — 2026-10-01
 
 Enable Sparkle’s required pre-extraction verification alongside signed feeds, disable signed-feed validation expiry, and verify updater startup in an isolated bundle before publishing. 0.9.0 was withdrawn to draft after a live probe found the missing prerequisite; it was not installed locally.

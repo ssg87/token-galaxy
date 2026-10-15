@@ -13,6 +13,9 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
     var spiritEnabled:Bool{UserDefaults.standard.object(forKey:"spiritEnabled")==nil || UserDefaults.standard.bool(forKey:"spiritEnabled")}
     var status:NSStatusItem!,timer:Timer?,barCount:NSTextField?
     lazy var combinedReader=CombinedTelemetryReader(codex:reader)
+    let speedEngine=TokenSpeedEngine()
+    var speedWindow:TokenSpeedController?
+    private var applicationReady=false,pendingSpeedURL=false
     var codexUsage:AllUsage?,claudeUsage:AllUsage?,sourceErrors=[String:String]()
     var allUsage:AllUsage?
     var tasks=[TaskUsage](),previous=[String:TaskUsage](),observed=[String:Int64](),selected:String?
@@ -30,7 +33,7 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
     var diameterSlider:NSSlider?,alphaSlider:NSSlider?,diameterLabel:NSTextField?,alphaLabel:NSTextField?
     func opacityValue()->Double{UserDefaults.standard.object(forKey:"orbOpacity")==nil ? 0.95:UserDefaults.standard.double(forKey:"orbOpacity")}
     func applicationDidFinishLaunching(_ notification:Notification){
-        NSApp.setActivationPolicy(.accessory);makeWindow();makeMenu()
+        NSApp.setActivationPolicy(.accessory);if TokenGalaxyRuntime.speedOnly{visible=false};makeWindow();makeMenu();syncMotion()
         interactionMonitor=NSEvent.addLocalMonitorForEvents(matching:[.leftMouseDown,.rightMouseDown,.leftMouseDragged,.scrollWheel,.keyDown]){[weak self] event in self?.recordInteraction();return event}
         if let i=CommandLine.arguments.firstIndex(of:"--overview-check"),CommandLine.arguments.count>i+1{do{try overviewMotionCheck(CommandLine.arguments[i+1])}catch{fputs("Overview check failed: \(error)\n",stderr);exit(1)};NSApp.terminate(nil);return}
         if CommandLine.arguments.contains("--ui-smoke"){
@@ -44,14 +47,20 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
         if let i=CommandLine.arguments.firstIndex(of:"--dual-capture"),CommandLine.arguments.count>i+1{do{try captureDual(CommandLine.arguments[i+1])}catch{fputs("Dual capture failed: \(error)\n",stderr);exit(1)};NSApp.terminate(nil);return}
         if let i=CommandLine.arguments.firstIndex(of:"--capability-check"),CommandLine.arguments.count>i+1{do{try capabilityCheck(CommandLine.arguments[i+1])}catch{fputs("Capability check failed: \(error)\n",stderr);exit(1)};NSApp.terminate(nil);return}
         if let path=capturePath{do{apply(try reader.snapshot());try capture(path)}catch{fputs("Render failed: \(error)\n",stderr);exit(1)};NSApp.terminate(nil);return}
-        if probeDirectory==nil{panel.orderFrontRegardless();if CommandLine.arguments.contains("--show-overview"){showOverview()};if CommandLine.arguments.contains("--show-mapping"){showMapping()}}else{scene.paused=true};refresh();timer=Timer.scheduledTimer(withTimeInterval:0.5,repeats:true){[weak self] _ in self?.refresh()};timer?.tolerance=0.05;if let timer=timer{RunLoop.main.add(timer,forMode:.common)}
+        if probeDirectory==nil{if visible{panel.orderFrontRegardless()};if TokenGalaxyRuntime.speedOnly{showTokenSpeed()};if CommandLine.arguments.contains("--show-overview"){showOverview()};if CommandLine.arguments.contains("--show-mapping"){showMapping()}}else{scene.paused=true};refresh();timer=Timer.scheduledTimer(withTimeInterval:0.5,repeats:true){[weak self] _ in self?.refresh()};timer?.tolerance=0.05;if let timer=timer{RunLoop.main.add(timer,forMode:.common)}
         NSWorkspace.shared.notificationCenter.addObserver(self,selector:#selector(sleeping),name:NSWorkspace.screensDidSleepNotification,object:nil)
         NSWorkspace.shared.notificationCenter.addObserver(self,selector:#selector(waking),name:NSWorkspace.screensDidWakeNotification,object:nil)
         NotificationCenter.default.addObserver(self,selector:#selector(activeChanged),name:NSApplication.didBecomeActiveNotification,object:nil)
         NotificationCenter.default.addObserver(self,selector:#selector(activeChanged),name:NSApplication.didResignActiveNotification,object:nil)
         if probeDirectory==nil{appUpdater.start()}
+        applicationReady=true
+        if pendingSpeedURL{pendingSpeedURL=false;showTokenSpeed()}
     }
-    func applicationShouldHandleReopen(_ sender:NSApplication,hasVisibleWindows flag:Bool)->Bool{visible=true;panel.orderFrontRegardless();syncMotion();return true}
+    func application(_ application:NSApplication,open urls:[URL]){
+        guard !TokenGalaxyRuntime.isPreview,urls.contains(where:TokenGalaxyRuntime.opensSpeedURL) else{return}
+        if applicationReady{showTokenSpeed()}else{pendingSpeedURL=true}
+    }
+    func applicationShouldHandleReopen(_ sender:NSApplication,hasVisibleWindows flag:Bool)->Bool{if TokenGalaxyRuntime.isPreview || TokenGalaxyRuntime.speedOnly{showTokenSpeed()}else{visible=true;panel.orderFrontRegardless()};syncMotion();return true}
     func makeWindow(){
         let saved=UserDefaults.standard.double(forKey:"orbDiameter"),d=saved>=96 ? min(640,saved):190
         panel=FloatingPanel(contentRect:NSRect(x:0,y:0,width:d,height:d),styleMask:[.borderless,.nonactivatingPanel,.utilityWindow],backing:.buffered,defer:false);panel.barDelegate=self;panel.supportsTouchBar=hasTouchBar;panel.delegate=self;panel.title="Token 星河球";panel.isOpaque=false;panel.backgroundColor = .clear;panel.hasShadow=false;panel.level = .floating;panel.hidesOnDeactivate=false;panel.isReleasedWhenClosed=false;panel.collectionBehavior=[.canJoinAllSpaces,.fullScreenAuxiliary];panel.alphaValue=opacityValue()
@@ -60,7 +69,7 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
         let empty=NSTextField(wrappingLabelWithString:"正在读取本地会话…");empty.alignment = .center;empty.font=NSFont.systemFont(ofSize:11);empty.textColor = .secondaryLabelColor;empty.translatesAutoresizingMaskIntoConstraints=false;root.addSubview(empty);NSLayoutConstraint.activate([empty.centerXAnchor.constraint(equalTo:root.centerXAnchor),empty.centerYAnchor.constraint(equalTo:root.centerYAnchor),empty.widthAnchor.constraint(equalTo:root.widthAnchor,multiplier:0.82)]);emptyNotice=empty
         if !panel.setFrameUsingName("TokenGalaxyOrb"),let s=NSScreen.main?.visibleFrame{panel.setFrameOrigin(NSPoint(x:s.maxX-d-24,y:s.maxY-d-24))};panel.setContentSize(NSSize(width:d,height:d))
     }
-    func makeMenu(){status=NSStatusBar.system.statusItem(withLength:NSStatusItem.variableLength);status.button?.image=NSImage(systemSymbolName:"sparkles",accessibilityDescription:"Token 星河球");status.button?.title=" —";status.button?.font=NSFont.monospacedDigitSystemFont(ofSize:11,weight:.regular);status.menu=makeContextMenu();let main=NSMenu();let item=NSMenuItem();item.submenu=makeContextMenu();main.addItem(item);NSApp.mainMenu=main;NSApp.touchBar=panel.makeTouchBar()}
+    func makeMenu(){status=NSStatusBar.system.statusItem(withLength:NSStatusItem.variableLength);status.button?.image=NSImage(systemSymbolName:"sparkles",accessibilityDescription:"Token 星河球");status.button?.title=" —";status.button?.font=NSFont.monospacedDigitSystemFont(ofSize:11,weight:.regular);status.menu=makeContextMenu();let main=NSMenu();let item=NSMenuItem();item.submenu=makeContextMenu();main.addItem(item);NSApp.mainMenu=main;if !TokenGalaxyRuntime.speedOnly{NSApp.touchBar=panel.makeTouchBar()}}
     func makeContextMenu()->NSMenu{
         let menu=NSMenu();menu.delegate=self
         for provider in visibleProviders{
@@ -80,7 +89,7 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
         }
         switcher.submenu=conversations;menu.addItem(switcher)
         let hint=NSMenuItem(title:"闲置 1 分钟后自动跟随最快主对话",action:nil,keyEquivalent:"");menu.addItem(hint);menu.addItem(.separator())
-        let actions:[(String,Selector)]=[("查看用量详情",#selector(showDetails)),("打开任务与代理工作总览",#selector(showOverview)),("用量与动效对照",#selector(showMapping)),("圆球大小与透明度…",#selector(showAppearance)),("返回全部任务",#selector(clearSelection)),(visible ? "隐藏圆球":"显示圆球",#selector(toggleWindow)),(paused ? "继续星河":"暂停星河",#selector(toggleAnimation)),("激活 Touch Bar 流动星河",#selector(activateBar)),("数据说明",#selector(showInfo)),("退出",#selector(quit))]
+        let actions:[(String,Selector)]=[("查看用量详情",#selector(showDetails)),("查看 Token 速度…",#selector(showTokenSpeed)),("打开任务与代理工作总览",#selector(showOverview)),("用量与动效对照",#selector(showMapping)),("圆球大小与透明度…",#selector(showAppearance)),("返回全部任务",#selector(clearSelection)),(visible ? "隐藏圆球":"显示圆球",#selector(toggleWindow)),(paused ? "继续星河":"暂停星河",#selector(toggleAnimation)),("激活 Touch Bar 流动星河",#selector(activateBar)),("数据说明",#selector(showInfo)),("退出",#selector(quit))]
         for (name,action) in actions{if action == #selector(quit){appUpdater.appendMenuItems(to:menu)};if action == #selector(activateBar) && !hasTouchBar{continue};let i=NSMenuItem(title:name,action:action,keyEquivalent:action == #selector(quit) ? "q":"");i.target=self;menu.addItem(i)};return menu
     }
     func menuWillOpen(_ menu:NSMenu){appUpdater.refreshMenu(menu);openMenus+=1;recordInteraction();for i in menu.items{if i.action == #selector(toggleWindow){i.title=visible ? "隐藏圆球":"显示圆球"};if i.action == #selector(toggleAnimation){i.title=paused ? "继续星河":"暂停星河"}}}
@@ -148,6 +157,10 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
     @objc func showOverview(){
         detailPopover?.close();if overview==nil{overview=OverviewController();overview?.onSelect={[weak self] id in self?.recordInteraction();self?.setSelection(id)}};overview?.update(tasks,observed:observed,increments:[:]);overview?.field.selected=selected;overview?.motionPaused=paused || screenSleeping;overview?.show()
     }
+    @objc func showTokenSpeed(){
+        if speedWindow==nil{speedWindow=TokenSpeedController(engine:speedEngine)}
+        speedWindow?.update(tasks);speedWindow?.show()
+    }
     @objc func showMapping(){if mapping==nil{mapping=ScalePreviewController()};mapping?.show()}
     func resizeOrb(_ desired:CGFloat){
         let d=min(640,max(96,desired.rounded())),f=panel.frame
@@ -196,7 +209,7 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
     @objc func logoStepped(){recordInteraction();setLogoPercent(logoStepper?.doubleValue ?? 140)}
     @objc func logoEdited(){recordInteraction();let value=Double(logoInput?.stringValue ?? "");setLogoPercent(value?.isFinite==true ? value!:Double(scene.claudeLogoScale)*100)}
     @objc func alphaChanged(){let a=1-(alphaSlider?.doubleValue ?? 5)/100;UserDefaults.standard.set(a,forKey:"orbOpacity");panel.alphaValue=a;alphaLabel?.stringValue="透明度  \(Int((1-a)*100))%"}
-    func syncMotion(){spiritPreview?.field.paused=paused || screenSleeping || !(spiritPreview?.window.isVisible ?? false) || (spiritPreview?.window.isMiniaturized ?? false);mapping?.fields.forEach{$0.paused=paused || screenSleeping || !(mapping?.window.isVisible ?? false) || (mapping?.window.isMiniaturized ?? false)};scene.paused=paused || !visible || screenSleeping;touchScene?.paused=paused || !NSApp.isActive || screenSleeping;overview?.motionPaused=paused || screenSleeping}
+    func syncMotion(){spiritPreview?.field.paused=paused || screenSleeping || !(spiritPreview?.window.isVisible ?? false) || (spiritPreview?.window.isMiniaturized ?? false);mapping?.fields.forEach{$0.paused=paused || screenSleeping || !(mapping?.window.isVisible ?? false) || (mapping?.window.isMiniaturized ?? false)};scene.paused=paused || !visible || screenSleeping;touchScene?.paused=paused || !NSApp.isActive || screenSleeping || TokenGalaxyRuntime.speedOnly;overview?.motionPaused=paused || screenSleeping;speedWindow?.suspended=screenSleeping}
     @objc func toggleWindow(){visible.toggle();visible ? panel.orderFrontRegardless():panel.orderOut(nil);syncMotion()}
     @objc func toggleAnimation(){paused.toggle();syncMotion()}
     @objc func activateBar(){guard hasTouchBar else{return};if !visible{toggleWindow()};NSApp.activate(ignoringOtherApps:true);panel.makeKeyAndOrderFront(nil);panel.makeFirstResponder(scene);let bar=panel.makeTouchBar();panel.touchBar=bar;NSApp.touchBar=bar;touchScene?.paused=paused}
@@ -232,6 +245,8 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
             guard let self=self else{return};let sample=self.combinedReader.snapshot()
             DispatchQueue.main.async{
                 self.reading=false;self.lastSampleMS=(CACurrentMediaTime()-started)*1000;self.sampleCount+=1
+                self.speedEngine.ingest(sample)
+                self.speedWindow?.update(sample.items)
                 self.codexUsage=sample.codex;self.claudeUsage=sample.claude;self.sourceErrors=sample.errors
                 if let c=sample.codex,let a=sample.claude{self.allUsage=AllUsage(total:c.total+a.total,indexedTotal:c.indexedTotal,records:c.records+a.records,logOverrides:c.logOverrides+a.logOverrides)}else{self.allUsage=nil}
                 self.readOK=sample.errors.isEmpty && sample.items.allSatisfy{$0.readIssue==nil && $0.pendingBytes==0}
@@ -274,13 +289,15 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
     func writeRuntimeStatus(){
         let now=Date().timeIntervalSince1970
         guard probeDirectory != nil || now-lastStatusWrite>=1.5 else{return};lastStatusWrite=now
-        let folder=probeDirectory.map{URL(fileURLWithPath:$0)} ?? FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("TokenGalaxy")
+        let folder=probeDirectory.map{URL(fileURLWithPath:$0)} ?? TokenGalaxyRuntime.stateDirectory ?? FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("TokenGalaxy")
         do{
             try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
             let details=tasks.prefix(12).map{t->[String:Any] in ["provider":t.provider.rawValue,"taskID":t.id,"total":t.total,"lastUserAt":t.lastUserAt ?? 0,"lastEventAt":t.lastEventAt ?? 0,"contextInput":t.contextInput ?? -1,"contextLimit":t.contextLimit ?? -1,"state":t.stateLabel,"pendingBytes":t.pendingBytes]}
             let value:[String:Any]=["version":Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "unknown","capabilities":["touchBar":hasTouchBar,"providers":visibleProviders.map{$0.rawValue}],"claudeLogoScale":Double(scene.claudeLogoScale),"codexTokens":codexUsage?.total ?? -1,"claudeTokens":claudeUsage?.total ?? -1,"codexRecords":codexUsage?.records ?? 0,"claudeRecords":claudeUsage?.records ?? 0,"sourceErrors":sourceErrors,"menuTotalTokens":allUsage?.total ?? -1,"menuIndexedTokens":allUsage?.indexedTotal ?? -1,"menuRecordCount":allUsage?.records ?? 0,"menuLogOverrides":allUsage?.logOverrides ?? 0,"menuTitle":status.button?.title ?? "","selectedTaskID":selected ?? "","selectionMode":selectionMode,"idleSeconds":max(0,ProcessInfo.processInfo.systemUptime-idleFocus.lastInteraction),"fastestMainConversationID":scene.model.fastestConversation(keeping:selected) ?? "","observationStartedAt":observationStartedAt,"detailsOpen":detailPopover?.isShown ?? false,"applicationActive":NSApp.isActive,"pid":ProcessInfo.processInfo.processIdentifier,"timestamp":now,"polls":sampleCount,"readOK":readOK,"sampleMS":lastSampleMS,"lastGoodRead":lastSampleAt,"scene":scene.runtimeEvidence(),"touchBar":touchScene?.runtimeEvidence() ?? [:],"overview":overview?.field.runtimeEvidence() ?? [:],"overviewVisible":overview?.window.isVisible ?? false,"overviewMinimized":overview?.window.isMiniaturized ?? false,"recentEvents":eventTrace,"recentRecords":details,"observedTokens":observed.values.reduce(0,+),"opacity":Double(panel.alphaValue),"screenSleeping":screenSleeping,"reduceMotion":NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,"probeFrames":probeFrame]
-            let bytes=try JSONSerialization.data(withJSONObject:value,options:[.prettyPrinted,.sortedKeys])
-            try bytes.write(to:folder.appendingPathComponent("status.json"),options:.atomic)
+            var output=value
+            output["speedWindowVisible"]=speedWindow?.window.isVisible ?? false
+            output["speedWindowRefreshCount"]=speedWindow?.refreshCount ?? 0
+            try JSONSerialization.data(withJSONObject:output,options:[.prettyPrinted,.sortedKeys]).write(to:folder.appendingPathComponent("status.json"),options:.atomic)
         }catch{status.button?.toolTip="运行诊断暂不可写；用量读取继续"}
     }
     func touchBar(_ bar:NSTouchBar,makeItemForIdentifier id:NSTouchBarItem.Identifier)->NSTouchBarItem?{
@@ -327,6 +344,11 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
         func check(_ b:Bool,_ text:String)throws{if !b{throw NSError(domain:"UI",code:1,userInfo:[NSLocalizedDescriptionKey:text])}}
         let updateMenu=makeContextMenu()
         let titles=updateMenu.items.map{$0.title}
+        try check(titles.contains("查看 Token 速度…"),"Token speed menu entry is missing")
+        if TokenGalaxyRuntime.isPreview{
+            try check(titles.contains("更新已禁用（隔离预览）") && !titles.contains("自动更新") && !appUpdater.enabled,"Preview update controls must be disabled")
+            print("PASS: isolated preview updater is disabled")
+        }else{
         let checkIndex=titles.firstIndex(of:"检查更新…"),quitIndex=titles.firstIndex(of:"退出"),infoIndex=titles.firstIndex(of:"数据说明")
         try check(checkIndex != nil && quitIndex != nil && infoIndex != nil && infoIndex!<checkIndex! && checkIndex!<quitIndex!,"Update menu is missing or misplaced")
         guard let automatic=updateMenu.items.first(where:{$0.title=="自动更新"}) else{throw NSError(domain:"UI",code:1)}
@@ -336,6 +358,7 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
         appUpdater.toggleAutomatic(automatic);try check(appUpdater.enabled != autoBefore,"Automatic update switch did not change settings")
         appUpdater.toggleAutomatic(automatic);try check(appUpdater.enabled==autoBefore,"Automatic update switch did not restore settings")
         print("PASS: update controls precede Quit; automatic check/download settings toggle together")
+        }
         let originalTouchBar=hasTouchBar;hasTouchBar=true;panel.supportsTouchBar=true;defer{hasTouchBar=originalTouchBar;panel.supportsTouchBar=originalTouchBar}
         let f=panel.frame,old=UserDefaults.standard.object(forKey:"orbOpacity"),diameter=UserDefaults.standard.object(forKey:"orbDiameter"),savedLogo=UserDefaults.standard.object(forKey:"claudeLogoScale")
         defer{panel.setFrame(f,display:false);panel.saveFrame(usingName:"TokenGalaxyOrb");if let old=old{UserDefaults.standard.set(old,forKey:"orbOpacity")}else{UserDefaults.standard.removeObject(forKey:"orbOpacity")};if let diameter=diameter{UserDefaults.standard.set(diameter,forKey:"orbDiameter")}else{UserDefaults.standard.removeObject(forKey:"orbDiameter")};if let savedLogo=savedLogo{UserDefaults.standard.set(savedLogo,forKey:"claudeLogoScale")}else{UserDefaults.standard.removeObject(forKey:"claudeLogoScale")}}

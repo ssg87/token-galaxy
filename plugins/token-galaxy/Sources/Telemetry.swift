@@ -59,6 +59,8 @@ struct TaskUsage {
     var logIdentity = ""
     var pendingBytes: Int64 = 0
     var readIssue: String? = nil
+    // Legacy cumulative presentation may retain a partial total; speed must not treat it as complete.
+    var usageTotalComplete = true
     var stateLabel: String {
         if awaitingInput { return "等待回答" }
         if let e = events.last, Date().timeIntervalSince1970 - e.at < 120 { return e.phase.label }
@@ -241,7 +243,7 @@ final class TelemetryReader {
                 } else { cursor.detail.issue = nil }
             } catch { cursor.detail.issue = "读取中断，自动重试" }
         }
-        cursor.detail.pendingBytes = Int64(size - cursor.offset)
+        cursor.detail.pendingBytes = Int64(size - cursor.offset) + Int64(cursor.carry.count) + (cursor.skippingPartial ? 1 : 0)
         return cursor.detail
     }
     func snapshot() throws -> [TaskUsage] {

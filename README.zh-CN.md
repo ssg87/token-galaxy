@@ -54,6 +54,8 @@ open 'plugins/token-galaxy/Outputs/Token Galaxy.app'
 
 右键圆球或点击菜单栏星光图标，可查看任务总览、调整外观、暂停、隐藏和退出。球体大小支持 96–640，Claude 图标比例支持 80–160%。
 
+0.10.0 源码／本地构建新增菜单“查看 Token 速度…”及自包含的 `token-speed` 技能。安装新版后，运行 `plugins/token-galaxy/skills/token-speed/scripts/token_speed.sh show` 可在现有应用进程打开速度窗口，`sample --seconds 15 --window 10 --provider all` 输出 JSON。窗口支持 10／30／60 秒本地日志观测速率；日志批量落盘可能形成尖峰，不能当作精确模型生成速度。此源码版本不等于已发布 0.10.0 自动升级包。详见 [使用与计量说明](docs/token-speed.md)。
+
 ## 隐私与限制
 
 应用只读本机会话，不上传数据、不连接模型 API、不要求登录。读取范围和日志格式兼容性见 [DATA.md](docs/DATA.md)。没有本地会话时显示空状态；会话后续出现时自动发现。
