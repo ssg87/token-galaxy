@@ -1,5 +1,43 @@
 import AppKit
 import QuartzCore
+
+/// Menu availability describes current readable records, independently of strict readOK and speed windows.
+private struct MenuReadStatus {
+    let state:String,iconName:String,hint:String
+    let readableCount:Int,unreadableCount:Int,incompleteCount:Int
+    let sourceIssueProviders:[String]
+    init(tasks:[TaskUsage],sourceErrors:[String:String],hasSample:Bool){
+        var readable=0,unreadable=0,incomplete=0
+        for task in tasks{
+            if task.readIssue != nil || sourceErrors[task.provider.rawValue] != nil{unreadable+=1}
+            else if task.pendingBytes>0{incomplete+=1}
+            else{readable+=1}
+        }
+        readableCount=readable;unreadableCount=unreadable;incompleteCount=incomplete
+        let known=[UsageProvider.codex,.claude].filter{sourceErrors[$0.rawValue] != nil}
+        sourceIssueProviders=known.map{$0.rawValue}+(sourceErrors.keys.contains{UsageProvider(rawValue:$0)==nil} ? ["other"]:[])
+        let hasFailure=unreadable>0 || !sourceErrors.isEmpty
+        if !hasSample && tasks.isEmpty && !hasFailure{state="reading"}
+        else if readable>0{state=unreadable>0 || incomplete>0 || !sourceErrors.isEmpty ? "partial":"ready"}
+        else if hasFailure{state="unavailable"}
+        else if incomplete>0{state="pending"}
+        else{state="empty"}
+        iconName=state=="unavailable" ? "exclamationmark.triangle":"sparkles"
+        if state=="reading"{hint="正在读取本地记录…"}
+        else if state=="empty"{hint="暂无本地记录"}
+        else{
+            var lines=["最近记录：\(readable)/\(tasks.count)条可读"]
+            if unreadable>0{lines.append("\(unreadable)条缺失或不可读")}
+            if incomplete>0{lines.append("\(incomplete)条尚未完整写入")}
+            if !sourceIssueProviders.isEmpty{
+                let labels=sourceIssueProviders.map{UsageProvider(rawValue:$0)?.label ?? "其他来源"}
+                lines.append("来源读取失败："+labels.joined(separator:"、"))
+            }
+            hint=lines.joined(separator:"\n")
+        }
+    }
+}
+
 final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMenuDelegate,NSWindowDelegate {
     let reader=TelemetryReader(),queue=DispatchQueue(label:"local.token-galaxy.read",qos:.utility)
     let appUpdater=AppUpdater()
@@ -28,6 +66,8 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
     var selectionMode="manual"
     var probeFrame=0
     var reading=false,paused=false,visible=true,screenSleeping=false,capturePath:String?
+    private var menuReadStatus:MenuReadStatus{MenuReadStatus(tasks:tasks,sourceErrors:sourceErrors,hasSample:sampleCount>0)}
+    private(set) var menuIconName="sparkles"
     var appearancePopover:NSPopover?,detailPopover:NSPopover?,detailTitle:NSTextField?,detailText:NSTextField?
     var diameterInput:NSTextField?,logoInput:NSTextField?,logoSlider:NSSlider?,diameterStepper:NSStepper?,logoStepper:NSStepper?
     var diameterSlider:NSSlider?,alphaSlider:NSSlider?,diameterLabel:NSTextField?,alphaLabel:NSTextField?
@@ -230,7 +270,16 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
     func updateLabels(){
         updateSpirit()
         if openMenus==0{status.menu=makeContextMenu()}
-        let task=tasks.first{$0.id==selected},total=task?.total ?? tasks.reduce(0){$0+$1.total};status.button?.title=allUsage.map{" "+compactTokens($0.total)} ?? " —";status.button?.toolTip=visibleProviders.map{p in "\(p.label)  \((p == .codex ? codexUsage:claudeUsage).map{compactTokens($0.total)} ?? "未知")"}.joined(separator:"\n")+"\n本地记录合计，非账单或订阅额度。"+(readOK ? "":"\n部分来源陈旧或正在读取。");status.button?.image=NSImage(systemSymbolName:readOK ? "sparkles":"exclamationmark.triangle",accessibilityDescription:readOK ? "Token 星河":"数据已陈旧");barCount?.stringValue=compactTokens(total)
+        let task=tasks.first{$0.id==selected},total=task?.total ?? tasks.reduce(0){$0+$1.total}
+        let menuRead=menuReadStatus
+        status.button?.title=allUsage.map{" "+compactTokens($0.total)} ?? " —"
+        let summaries=visibleProviders.map{p in "\(p.label)  \((p == .codex ? codexUsage:claudeUsage).map{compactTokens($0.total)} ?? "未知")"}
+        let tooltip=(summaries+[menuRead.hint,"本地记录合计，非账单或订阅额度。"]).joined(separator:"\n")
+        status.button?.toolTip=tooltip;menuIconName=menuRead.iconName
+        status.button?.image=NSImage(systemSymbolName:menuRead.iconName,accessibilityDescription:menuRead.hint)
+        status.button?.setAccessibilityLabel("Token 星河，"+menuRead.hint.replacingOccurrences(of:"\n",with:"，"))
+        status.button?.setAccessibilityHelp(tooltip)
+        barCount?.stringValue=compactTokens(total)
         detailTitle?.stringValue=task.map{"[\($0.provider.label)] \($0.label)"} ?? "用量 · 最近 \(tasks.count) 条记录"
         if let t=task{
             let parent=t.parentID.flatMap{id in tasks.first{$0.id==id}?.title} ?? (t.parentID==nil ? "主任务":"父任务不在当前范围")
@@ -297,6 +346,15 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
             var output=value
             output["speedWindowVisible"]=speedWindow?.window.isVisible ?? false
             output["speedWindowRefreshCount"]=speedWindow?.refreshCount ?? 0
+            let menuRead=menuReadStatus
+            output["menuReadState"]=menuRead.state
+            output["menuIconName"]=menuIconName
+            output["menuReadHint"]=menuRead.hint
+            output["menuReadableRecordCount"]=menuRead.readableCount
+            output["menuUnreadableRecordCount"]=menuRead.unreadableCount
+            output["menuIncompleteRecordCount"]=menuRead.incompleteCount
+            output["menuSourceIssueProviders"]=menuRead.sourceIssueProviders
+            output["menuTooltip"]=status.button?.toolTip ?? ""
             if let coverage=speedWindow?.latestSnapshot?.coverage{
                 output["speedPartial"]=coverage.partial
                 output["speedIncludedRecordCount"]=coverage.includedRecordCount
@@ -346,8 +404,44 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
         try JSONSerialization.data(withJSONObject:results,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:path))
         print("PASS: eight hardware/provider UI combinations")
     }
+    private func menuReadStatusChecks()throws{
+        func check(_ condition:Bool,_ message:String)throws{if !condition{throw NSError(domain:"MenuReadStatus",code:1,userInfo:[NSLocalizedDescriptionKey:message])}}
+        let originalTasks=tasks,originalErrors=sourceErrors,originalCount=sampleCount,originalReadOK=readOK
+        defer{tasks=originalTasks;sourceErrors=originalErrors;sampleCount=originalCount;readOK=originalReadOK;updateLabels()}
+        let normal=TaskUsage(id:"menu-normal",title:"PRIVATE_TITLE",project:"PRIVATE_PROJECT",total:100,input:nil,cached:nil,output:nil,source:"fixture")
+        var missing=normal;missing.readIssue="PRIVATE_PATH_ERROR"
+        var pending=normal;pending.pendingBytes=20
+        var claude=normal;claude.provider = .claude
+        func show(_ items:[TaskUsage],errors:[String:String]=[:],sampled:Bool=true){
+            tasks=items;sourceErrors=errors;sampleCount=sampled ? 1:0;readOK=false;updateLabels()
+        }
+        show([normal,missing])
+        try check(menuIconName=="sparkles" && menuReadStatus.state=="partial" && status.button?.image != nil,"Partial records displayed a menu warning")
+        try check(status.button?.toolTip?.contains("最近记录：1/2条可读")==true && status.button?.toolTip?.contains("1条缺失或不可读")==true,"Partial menu tooltip omitted concrete coverage")
+        try check(status.button?.accessibilityLabel()?.contains("1条缺失或不可读")==true,"Partial menu accessibility omitted the missing count")
+        try check(!readOK,"Menu presentation changed strict readOK")
+        show([missing])
+        try check(menuIconName=="exclamationmark.triangle" && menuReadStatus.state=="unavailable" && status.button?.toolTip?.contains("最近记录：0/1条可读")==true,"Entirely unreadable records lost their warning")
+        show([normal,claude],errors:["codex":"PRIVATE_SOURCE_ERROR"])
+        try check(menuIconName=="sparkles" && menuReadStatus.readableCount==1 && status.button?.toolTip?.contains("来源读取失败：Codex")==true,"A failed provider blocked the healthy provider or hid its issue")
+        show([normal,pending])
+        try check(menuIconName=="sparkles" && menuReadStatus.incompleteCount==1 && status.button?.toolTip?.contains("1条尚未完整写入")==true,"Incomplete writes were not explained separately")
+        show([pending])
+        try check(menuIconName=="sparkles" && menuReadStatus.state=="pending","An incomplete write was falsely reported as a read failure")
+        show([normal])
+        try check(menuIconName=="sparkles" && menuReadStatus.state=="ready" && status.button?.toolTip?.contains("最近记录：1/1条可读")==true,"Normal readable menu state failed")
+        show([])
+        try check(menuIconName=="sparkles" && menuReadStatus.state=="empty" && status.button?.toolTip?.contains("暂无本地记录")==true,"Confirmed empty records falsely displayed an error")
+        show([],sampled:false)
+        try check(menuIconName=="sparkles" && menuReadStatus.state=="reading" && status.button?.toolTip?.contains("正在读取本地记录…")==true,"Initial reading falsely displayed an error")
+        show([],errors:["codex":"PRIVATE_SOURCE_ERROR"])
+        try check(menuIconName=="exclamationmark.triangle" && menuReadStatus.state=="unavailable","A source-level read failure with no usable records lost its warning")
+        try check(!menuReadStatus.hint.contains("PRIVATE") && status.button?.toolTip?.contains("PRIVATE")==false,"Menu diagnostic text exposed private fixture data")
+        print("PASS: native menu normal/partial/unreadable/provider failure/incomplete/empty/initial states; concrete tooltip/accessibility; strict readOK preserved")
+    }
     func uiSmoke()throws{
         func check(_ b:Bool,_ text:String)throws{if !b{throw NSError(domain:"UI",code:1,userInfo:[NSLocalizedDescriptionKey:text])}}
+        try menuReadStatusChecks()
         let updateMenu=makeContextMenu()
         let titles=updateMenu.items.map{$0.title}
         try check(titles.contains("查看 Token 速度…"),"Token speed menu entry is missing")

@@ -1,5 +1,9 @@
 # Changes
 
+## 0.10.2 — source/local build (not published)
+
+Keep the normal menu sparkle when any local records remain readable. Explain unreadable records, incomplete writes and provider failures separately in the tooltip and accessibility text; show the warning triangle only when no records are usable and a read failure exists. Preserve strict readOK, speed accounting and automatic selection behavior. Add native menu-state smoke checks and content-free menu diagnostics. This entry does not claim a published automatic-update archive or release tag.
+
 ## 0.10.1 — source/local build (not published)
 
 Keep healthy task windows counting when other local records are missing, unreadable or still warming. Exclude only those records, rebaseline each recovered task independently, and show explicit included/excluded counts and a partial-coverage notice. JSON schema 2 adds per-window coverage and per-point partial metadata; no valid records remains unknown, while a complete healthy idle window remains zero. Historical cumulative totals remain separate and may include records excluded from the current speed. Add synthetic 37-readable/43-missing Codex plus 80-Claude native previews and regression fixtures. This entry does not claim a published automatic-update archive or release tag.
