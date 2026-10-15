@@ -90,14 +90,14 @@ func runTokenSpeedChecks() throws {
     child.parentID = root.id
     for i in 0...10 { root.total += 10; members.ingest(speedSample([root]), at: Double(i)) }
     members.ingest(speedSample([root, child]), at: 11)
-    try speedCheck(members.snapshot(at: 11).rates.total == nil && members.snapshot(at: 11).reasons.contains("scope_changed"), "New member replayed its history")
+    try speedCheck(members.snapshot(at: 11).rates.total == 9 && members.snapshot(at: 11).coverage.partial && members.snapshot(at: 11).coverage.warmingRecordCount == 1, "New member blocked the healthy record or replayed its history")
     try speedCheck(members.snapshot(scope: .task(id: root.id, provider: .codex), at: 11).rates.total == 9, "Membership change damaged an existing task's continuous window")
     for i in 12...21 { root.total += 10; child.total += 30; members.ingest(speedSample([root, child, root]), at: Double(i)) }
     try speedCheck(members.snapshot(at: 21).rates.total == 40, "Parent and child own counters were aggregated more than once")
     try speedCheck(members.snapshot(at: 21).coverage.recordCount == 2, "Duplicate task ID was counted twice")
     var conflicting = root; conflicting.total += 1
     members.ingest(speedSample([root, child, conflicting]), at: 22)
-    try speedCheck(members.snapshot(at: 22).rates.total == nil && members.snapshot(at: 22).reasons.contains("duplicate_conflict"), "Conflicting duplicate counters were silently chosen")
+    try speedCheck(members.snapshot(at: 22).rates.total == 27 && members.snapshot(at: 22).coverage.excludedRecordCount == 1 && members.snapshot(at: 22).reasons.contains("duplicate_conflict"), "Conflicting duplicate counters were silently chosen or blocked the healthy child")
 
     let clock = TokenSpeedEngine()
     task = speedTask()
@@ -120,7 +120,7 @@ func runTokenSpeedChecks() throws {
     result = mixed.snapshot(window: .seconds60, at: 60)
     try speedCheck(result.rates.total == 30 && result.rates.input == 26 && result.rates.output == 4 && result.coverage.recordCount == 2, "Provider ID collision or Claude cache double counting")
     mixed.ingest(speedSample([codex, claude], errors: ["claude": "unavailable"]), at: 61)
-    try speedCheck(mixed.snapshot(at: 61).rates.total == nil && mixed.snapshot(scope: .provider(.codex), at: 61).rates.total != nil, "All scope hid an established provider failure")
+    try speedCheck(mixed.snapshot(at: 61).rates.total == 9 && mixed.snapshot(at: 61).coverage.partial && mixed.snapshot(at: 61).coverage.excludedRecordCount == 1 && mixed.snapshot(scope: .provider(.codex), at: 61).rates.total != nil, "Failed provider blocked the other provider or hid partial coverage")
     let json = try result.encodedJSON()
     let text = String(decoding: json, as: UTF8.self)
     try speedCheck(!text.contains("PRIVATE_FIXTURE") && !text.contains("logPath") && !text.contains("title"), "Default speed JSON exposed content or paths")
@@ -129,8 +129,78 @@ func runTokenSpeedChecks() throws {
     _ = try JSONDecoder().decode(TokenSpeedSnapshot.self, from: json)
 
     try runTokenSpeedReaderCompletenessChecks()
+    try runTokenSpeedPartialCoverageChecks()
+    try runTokenSpeedTrendCacheChecks()
     try runTokenSpeedBufferChecks()
     print("PASS: Token observation speed fixtures; baseline/cache semantics/zero-vs-missing/windows/recovery/classification/reset/membership/dedup/clocks/parallel providers/privacy/reader completeness/bounded history")
+}
+
+private func runTokenSpeedPartialCoverageChecks() throws {
+    let engine = TokenSpeedEngine()
+    var items = [TaskUsage]()
+    for provider in [UsageProvider.codex, .claude] {
+        for id in 0..<80 {
+            var task = speedTask("partial-\(id)", provider: provider)
+            if provider == .codex && id >= 37 { task.readIssue = "synthetic missing path" }
+            items.append(task)
+        }
+    }
+    for tick in 0...120 {
+        if tick > 0 { for i in items.indices { items[i].total += 10; items[i].input! += 8; items[i].output! += 2 } }
+        engine.ingest(speedSample(items), at: Double(tick))
+    }
+    var result = engine.snapshot(at: 120)
+    try speedCheck(result.schemaVersion == 2 && result.rates.total == 1170 && result.rates.input == 936 && result.rates.output == 234, "43 missing Codex records blocked the 117 normal records")
+    try speedCheck(result.coverage.complete && result.coverage.partial && result.coverage.includedRecordCount == 117 && result.coverage.excludedRecordCount == 43 && result.coverage.missingRecordCount == 43 && result.coverage.warmingRecordCount == 0, "Partial total-rate coverage counts are inconsistent")
+    try speedCheck(result.coverage.lastGoodSampleAgeSeconds == 0 && result.providers.first { $0.provider == "codex" }?.rates.total == 370, "Excluded records polluted freshness or normal Codex rate")
+    try speedCheck(result.trend.last?.partial == true && result.trend.last?.includedRecordCount == 117, "Trend omitted partial coverage metadata")
+    try speedCheck(engine.snapshot(window: .seconds30, at: 120, trendSeconds: 0).rates.total == 1170 && engine.snapshot(window: .seconds60, at: 120, trendSeconds: 0).rates.total == 1170, "Partial window selection changed accounting")
+    // One normal record fails while the other 116 keep their existing windows.
+    items[0].readIssue = "synthetic temporary read failure"
+    for i in items.indices { items[i].total += 10; items[i].input! += 8; items[i].output! += 2 }
+    engine.ingest(speedSample(items), at: 121)
+    result = engine.snapshot(at: 121, trendSeconds: 0)
+    try speedCheck(result.rates.total == 1160 && result.coverage.includedRecordCount == 116 && result.coverage.missingRecordCount == 44, "One runtime failure interrupted healthy windows")
+    // Recovery has a large historical jump, excluded until only its new 10-second window is valid.
+    items[0].readIssue = nil; items[0].total += 1_000_000; items[0].input! += 1_000_000
+    for i in items.indices { items[i].total += 10; items[i].input! += 8; items[i].output! += 2 }
+    engine.ingest(speedSample(items), at: 122)
+    result = engine.snapshot(at: 122, trendSeconds: 0)
+    try speedCheck(result.rates.total == 1160 && result.coverage.warmingRecordCount == 1 && result.coverage.missingRecordCount == 43, "Recovering record replayed history or blocked healthy records")
+    for tick in 123...132 {
+        for i in items.indices { items[i].total += 10; items[i].input! += 8; items[i].output! += 2 }
+        engine.ingest(speedSample(items), at: Double(tick))
+    }
+    result = engine.snapshot(at: 132, trendSeconds: 0)
+    try speedCheck(result.rates.total == 1170 && result.coverage.includedRecordCount == 117, "Recovered record failed to rejoin with only its newly observed increments")
+    // Removing a member must neither reset the others nor replay its older history in current scope.
+    let removed = items.remove(at: 0)
+    engine.ingest(speedSample(items), at: 133)
+    result = engine.snapshot(at: 133)
+    try speedCheck(result.coverage.recordCount == 159 && result.coverage.includedRecordCount == 116 && result.rates.total == 1044, "Departed member remained in current scope or reset healthy records")
+    try speedCheck(result.trend.first { $0.at == 132 }?.includedRecordCount == 117 && result.trend.last?.includedRecordCount == 116, "Historical trend ignored task membership at the point's time")
+    items.insert(removed, at: 0); items[0].total += 1_000_000
+    engine.ingest(speedSample(items), at: 134)
+    try speedCheck(engine.snapshot(at: 134, trendSeconds: 0).coverage.warmingRecordCount == 1, "Reappearing member bridged its absent interval")
+    // Unknown classification on one included record keeps total usable, classification unknown.
+    var unknown = speedTask("unknown-classification", input: nil)
+    let classifications = TokenSpeedEngine()
+    var known = speedTask("known-classification")
+    for tick in 0...10 {
+        if tick > 0 { unknown.total += 3; known.total += 7; known.input! += 7 }
+        classifications.ingest(speedSample([known, unknown]), at: Double(tick))
+    }
+    let classified = classifications.snapshot(at: 10, trendSeconds: 0)
+    try speedCheck(classified.rates.total == 10 && classified.rates.input == nil && classified.coverage.includedRecordCount == 2 && !classified.coverage.partial, "Unknown category was fabricated or changed total coverage")
+    for i in items.indices { items[i].readIssue = "synthetic unavailable" }
+    engine.ingest(speedSample(items), at: 135)
+    result = engine.snapshot(at: 135, trendSeconds: 0)
+    try speedCheck(result.rates.total == nil && result.coverage.includedRecordCount == 0 && result.coverage.excludedRecordCount == 160 && result.state == .unavailable, "Entirely invalid scope fabricated zero")
+    let idle = TokenSpeedEngine()
+    let healthy = speedTask("idle"), bad = items[0]
+    for tick in 0...10 { idle.ingest(speedSample([healthy, bad]), at: Double(tick)) }
+    let idleResult = idle.snapshot(at: 10, trendSeconds: 0)
+    try speedCheck(idleResult.rates.total == 0 && idleResult.state == .idle && idleResult.coverage.partial, "Complete healthy idle window was confused with its excluded bad record")
 }
 
 private func runTokenSpeedReaderCompletenessChecks() throws {
@@ -175,6 +245,34 @@ private func runTokenSpeedReaderCompletenessChecks() throws {
     try speedCheck(TelemetryReader(home: codexFolder).latest(codexLog).pendingBytes > 0, "Codex partial JSON line was reported complete")
 }
 
+private func runTokenSpeedTrendCacheChecks() throws {
+    let engine = TokenSpeedEngine()
+    var task = speedTask("cache")
+    for tick in 0...10 {
+        if tick > 0 { task.total += 10 }
+        engine.ingest(speedSample([task]), at: Double(tick))
+    }
+    try speedCheck(engine.snapshot(at: 10, trendSeconds: 1).trend.last?.rates.total == 10, "Completed trend second did not establish a valid cached rate")
+    let cachedCount = engine.retainedTrendPointCount
+    try speedCheck(engine.snapshot(at: 20, trendSeconds: 1).trend.last?.rates.total == nil && engine.retainedTrendPointCount == cachedCount, "Unknown future trend point was cached")
+    task.total += 5; engine.ingest(speedSample([task]), at: 10.5)
+    let halfSecond = engine.snapshot(at: 10.5, trendSeconds: 1)
+    try speedCheck(halfSecond.rates.total == 10.5 && halfSecond.trend.last?.rates.total == 10, "Cached history replaced the current rate or changed an already completed second")
+    task.total += 5; engine.ingest(speedSample([task]), at: 11)
+    for tick in 12...20 { task.total += 10; engine.ingest(speedSample([task]), at: Double(tick)) }
+    try speedCheck(engine.snapshot(at: 20, trendSeconds: 1).trend.last?.rates.total == 10, "Lookahead cached an unknown value that survived real future samples")
+    for tick in 21...300 { task.total += 10; engine.ingest(speedSample([task]), at: Double(tick)) }
+    for window in TokenSpeedWindow.allCases { _ = engine.snapshot(window: window, at: 300, trendSeconds: 300) }
+    try speedCheck(engine.retainedTrendPointCount == 1800 && engine.maximumRetainedTrendPointsPerScope == 300, "Provider/window trend cache was not bounded to 300 points each")
+    for tick in 301...310 { task.total += 10; engine.ingest(speedSample([task]), at: Double(tick)) }
+    for window in TokenSpeedWindow.allCases {
+        try speedCheck(engine.snapshot(window: window, at: 310, trendSeconds: 300).trend.last?.rates.total == 10, "Latest trend second reused stale cached history")
+    }
+    try speedCheck(engine.retainedTrendPointCount == 1800 && engine.maximumRetainedTrendPointsPerScope == 300, "New samples grew the trend cache beyond its bound")
+    engine.ingest(speedSample([task]), at: 700)
+    try speedCheck(engine.retainedTrendPointCount == 0, "Expired trend points were not pruned during ingest")
+}
+
 private func runTokenSpeedBufferChecks() throws {
     let engine = TokenSpeedEngine()
     var items = [TaskUsage]()
@@ -187,14 +285,23 @@ private func runTokenSpeedBufferChecks() throws {
     let ingestSeconds = ProcessInfo.processInfo.systemUptime - begin
     let snapshotBegin = ProcessInfo.processInfo.systemUptime
     var result = engine.snapshot(at: 300)
-    for _ in 0..<9 { result = engine.snapshot(at: 300) }
-    let snapshotSeconds = (ProcessInfo.processInfo.systemUptime - snapshotBegin) / 10
+    let firstSnapshotSeconds = ProcessInfo.processInfo.systemUptime - snapshotBegin
+    var sustainedSnapshotSeconds: TimeInterval = 0
+    for sample in 601...620 {
+        for i in items.indices { items[i].total += 5; items[i].input! += 4; items[i].output! += 1 }
+        let at = Double(sample) * 0.5
+        engine.ingest(speedSample(items), at: at)
+        let snapshotStart = ProcessInfo.processInfo.systemUptime
+        result = engine.snapshot(at: at)
+        sustainedSnapshotSeconds += ProcessInfo.processInfo.systemUptime - snapshotStart
+    }
+    sustainedSnapshotSeconds /= 20
     try speedCheck(result.rates.total == 1600 && result.trend.count == 120 && result.providers.allSatisfy { $0.trend.count == 120 }, "160-record five-minute snapshot was incorrect")
     try speedCheck(engine.retainedTaskCount == 160 && engine.retainedSampleCount <= 162 * 1201, "Sampling history is unbounded")
-    for sample in 601...900 { engine.ingest(speedSample(items), at: Double(sample) * 0.5) }
+    for sample in 621...900 { engine.ingest(speedSample(items), at: Double(sample) * 0.5) }
     try speedCheck(engine.retainedSampleCount <= 162 * 601, "History retained observations older than five minutes")
     let churn = TokenSpeedEngine()
     for sample in 0..<400 { churn.ingest(speedSample([speedTask("churn-\(sample)")]), at: Double(sample) * 0.5) }
     try speedCheck(churn.retainedTaskCount <= 320, "Record churn retained unbounded task IDs")
-    print(String(format: "PASS: speed performance fixture 160 records / 601 polls / 300s; ingest %.3fs total, snapshot + 120s/provider trends %.6fs average; retained samples %d", ingestSeconds, snapshotSeconds, engine.retainedSampleCount))
+    print(String(format: "PASS: speed performance fixture 160 records / 601 initial polls / 300s; ingest %.3fs total, snapshot + 120s/provider trends first %.6fs, sustained %.6fs average over 20 refreshes with new samples; retained samples %d", ingestSeconds, firstSnapshotSeconds, sustainedSnapshotSeconds, engine.retainedSampleCount))
 }

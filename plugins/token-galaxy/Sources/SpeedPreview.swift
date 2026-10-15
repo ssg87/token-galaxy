@@ -129,7 +129,30 @@ func runTokenSpeedDemo(_ directory:String)throws {
     try require(warmingController.latestSnapshot?.state == .warming && warmingController.totalRate.value.stringValue=="—","Short sampling must be warming, with no false rate")
     try saveSpeedImage(warmingController.previewImage(),to:folder.appendingPathComponent("speed-warming.png"))
     try warming.snapshot(at:4).encodedJSON().write(to:folder.appendingPathComponent("speed-warming.json"),options:.atomic)
-    let assertions:[String:Any]=["syntheticOnly":true,"initialReadDoesNotClaimEmpty":true,"sourceSwitch":true,"taskSwitch":true,"windowSwitch":true,"metricSwitch":true,"hiddenWindowNoRedraw":true,"axesPastToNowAndLowToHigh":true,"unknownIntervalsBreakLine":true,"idleIsKnownZero":true,"gapIsUnknown":true,"emptyIsUnknown":true,"warmingHasNoRate":true,"snapshotIsSingleEngineSource":true]
+    let partial=TokenSpeedEngine(),partialController=TokenSpeedController(engine:partial)
+    defer{partialController.window.orderOut(nil)}
+    var partialItems=[TaskUsage]()
+    for provider in [UsageProvider.codex,.claude]{for id in 0..<80{
+        var task=speedDemoTask("partial-\(provider.rawValue)-\(id)",provider:provider,total:10_000,input:8_000,output:2_000)
+        if provider == .codex && id>=37{task.readIssue="synthetic missing record"}
+        partialItems.append(task)
+    }}
+    for tick in 0...240{
+        if tick>0{for i in partialItems.indices{partialItems[i].total+=5;partialItems[i].input!+=4;partialItems[i].output!+=1}}
+        partial.ingest(speedDemoSample(partialItems),at:Double(tick)/2)
+    }
+    partialController.window.setContentSize(NSSize(width:940,height:700));partialController.window.orderFrontRegardless();partialController.update(partialItems,at:120);partialController.refresh(force:true)
+    try require(partialController.latestSnapshot?.rates.total==1170 && partialController.latestSnapshot?.coverage.partial==true && partialController.latestSnapshot?.coverage.includedRecordCount==117 && partialController.latestSnapshot?.coverage.missingRecordCount==43,"Partial preview must continue the 117 healthy records")
+    let partialText="部分统计：已统计117/160条，缺失或不可读43条未计入"
+    try require(partialController.stateLabel.stringValue==partialText,"Partial coverage must be explained explicitly")
+    try saveSpeedImage(partialController.previewImage(),to:folder.appendingPathComponent("speed-partial-wide.png"))
+    partialController.window.setContentSize(NSSize(width:600,height:740));partialController.refresh(force:true)
+    _ = partialController.previewImage()
+    let textWidth=(partialText as NSString).size(withAttributes:[.font:partialController.stateLabel.font!]).width
+    try require(textWidth<=partialController.stateLabel.bounds.width,"Narrow partial coverage text must not truncate its counts")
+    try saveSpeedImage(partialController.previewImage(),to:folder.appendingPathComponent("speed-partial-narrow.png"))
+    try partial.snapshot(at:120).encodedJSON().write(to:folder.appendingPathComponent("speed-partial.json"),options:.atomic)
+    let assertions:[String:Any]=["syntheticOnly":true,"initialReadDoesNotClaimEmpty":true,"sourceSwitch":true,"taskSwitch":true,"windowSwitch":true,"metricSwitch":true,"hiddenWindowNoRedraw":true,"axesPastToNowAndLowToHigh":true,"unknownIntervalsBreakLine":true,"idleIsKnownZero":true,"gapIsUnknown":true,"emptyIsUnknown":true,"warmingHasNoRate":true,"snapshotIsSingleEngineSource":true,"partialHealthy117Of160":true,"partialExcluded43Explicit":true,"partialNarrowCountsVisible":true]
     try JSONSerialization.data(withJSONObject:assertions,options:[.prettyPrinted,.sortedKeys]).write(to:folder.appendingPathComponent("speed-ui-checks.json"),options:.atomic)
     print("PASS: native token speed previews, source/task/window/metric controls, hidden redraw guard, chart direction, warming/idle/gap/empty states")
 }

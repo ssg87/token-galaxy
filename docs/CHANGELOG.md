@@ -1,5 +1,9 @@
 # Changes
 
+## 0.10.1 — source/local build (not published)
+
+Keep healthy task windows counting when other local records are missing, unreadable or still warming. Exclude only those records, rebaseline each recovered task independently, and show explicit included/excluded counts and a partial-coverage notice. JSON schema 2 adds per-window coverage and per-point partial metadata; no valid records remains unknown, while a complete healthy idle window remains zero. Historical cumulative totals remain separate and may include records excluded from the current speed. Add synthetic 37-readable/43-missing Codex plus 80-Claude native previews and regression fixtures. This entry does not claim a published automatic-update archive or release tag.
+
 ## 0.10.0 — source/local build (not published)
 
 Add the native Token speed window, 10/30/60-second observed-rate windows, per-provider/task filters, gap-aware trends and bounded JSON sampling. A self-contained skill opens the installed app through `token-galaxy://speed`, reusing its GUI process; first-read time is separate from requested observation time. Keep the isolated development preview available. This entry records the source/local build, not a published automatic-update archive or release tag.

@@ -26,8 +26,8 @@ $URL_TYPES
 <key>CFBundleExecutable</key><string>TokenGalaxy</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleVersion</key><string>38</string>
-<key>CFBundleShortVersionString</key><string>0.10.0</string>
+<key>CFBundleVersion</key><string>39</string>
+<key>CFBundleShortVersionString</key><string>0.10.1</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>SUFeedURL</key><string>https://github.com/ssg87/token-galaxy/releases/latest/download/appcast.xml</string>
 <key>SUPublicEDKey</key><string>$UPDATE_KEY</string>

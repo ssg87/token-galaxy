@@ -49,7 +49,7 @@ private func speedReason(_ reason:String)->String {
         "counter_regressed":"累计计数回退，正在重新建立窗口", "counter_appeared":"累计计数刚刚可用",
         "invalid_counter":"累计计数无效", "duplicate_conflict":"重复记录的计数有冲突",
         "missing_total":"总量未知", "missing_input":"输入分类未知", "missing_output":"输出分类未知",
-        "category_recovered":"用量分类恢复，正在重新建立窗口"
+        "category_recovered":"用量分类恢复，正在重新建立窗口", "partial_coverage":"部分记录未计入速度"
     ]
     return labels[reason] ?? reason
 }
@@ -77,7 +77,7 @@ final class TokenSpeedRateView:NSView {
     func update(rate:Double?,count:Int64?,state:TokenSpeedState){
         value.stringValue=rate.map{String(format:"%.1f",$0)} ?? "—"
         let formatter=NumberFormatter();formatter.numberStyle = .decimal
-        cumulative.stringValue="累计 "+(count.flatMap{formatter.string(from:NSNumber(value:$0))} ?? "—")+" tokens"
+        cumulative.stringValue="历史累计 "+(count.flatMap{formatter.string(from:NSNumber(value:$0))} ?? "—")+" tokens"
         value.textColor=rate==nil ? .secondaryLabelColor:.labelColor
         setAccessibilityLabel("\(name.stringValue)，\(rate.map{String(format:"%.1f tokens 每秒",$0)} ?? "速率未知")，\(cumulative.stringValue)，\(tokenSpeedStateLabel(state))")
     }
@@ -268,27 +268,40 @@ final class TokenSpeedController:NSObject,NSWindowDelegate {
         totalRate.update(rate:snapshot.rates.total,count:snapshot.cumulative.total,state:snapshot.metricStates.total)
         inputRate.update(rate:snapshot.rates.input,count:snapshot.cumulative.input,state:snapshot.metricStates.input)
         outputRate.update(rate:snapshot.rates.output,count:snapshot.cumulative.output,state:snapshot.metricStates.output)
-        stateLabel.stringValue=awaitingFirstRead ? "正在读取本地记录…":tokenSpeedStateLabel(snapshot.state)
-        stateLabel.textColor=[TokenSpeedState.gap,.unavailable].contains(snapshot.state) ? .systemOrange:.labelColor
         let c=snapshot.coverage
+        if c.partial {
+            stateLabel.stringValue="部分统计：已统计\(c.includedRecordCount)/\(c.recordCount)条"
+            if c.missingRecordCount>0{stateLabel.stringValue+="，缺失或不可读\(c.missingRecordCount)条未计入"}
+        }else{stateLabel.stringValue=awaitingFirstRead ? "正在读取本地记录…":tokenSpeedStateLabel(snapshot.state)}
+        stateLabel.textColor=c.partial || [TokenSpeedState.gap,.unavailable].contains(snapshot.state) ? .systemOrange:.labelColor
         let age=c.lastSampleAgeSeconds.map{String(format:"%.1f 秒前",$0)} ?? "未知"
         let good=c.lastGoodSampleAgeSeconds.map{String(format:"%.1f 秒前",$0)} ?? "未知"
-        coverageLabel.stringValue=awaitingFirstRead ? "等待首次采样 · 完成后开始建立 \(c.windowSeconds) 秒窗口":"采样 \(String(format:"%.1f",min(c.observedSeconds,Double(c.windowSeconds)))) / \(c.windowSeconds) 秒  ·  \(c.recordCount) 条记录  ·  最新 \(age)  ·  最近有效 \(good)"
+        coverageLabel.stringValue=awaitingFirstRead ? "等待首次采样 · 完成后开始建立 \(c.windowSeconds) 秒窗口":"有效窗口 \(String(format:"%.1f",min(c.observedSeconds,Double(c.windowSeconds)))) / \(c.windowSeconds) 秒  ·  已统计\(c.includedRecordCount)/\(c.recordCount)条  ·  最新 \(age)  ·  最近有效 \(good)"
         coverageLabel.toolTip=coverageLabel.stringValue
         progress.isHidden=snapshot.state != .warming;progress.doubleValue=min(1,c.observedSeconds/Double(max(1,c.windowSeconds)))
         let explained=snapshot.reasons.map(speedReason)
-        reasonLabel.stringValue=awaitingFirstRead ? "首次读取历史记录可能较慢，完成后开始建立窗口":explained.isEmpty ? "速率按完整窗口计算；未知或断档区间在曲线中留空。":Array(Set(explained)).sorted().joined(separator:"；")
+        if c.partial {
+            var notes=[String]()
+            if c.warmingRecordCount>0{notes.append("\(c.warmingRecordCount)条等待完整窗口")}
+            if c.excludedRecordCount==0{notes.append("部分来源当前不可用")}
+            notes.append("历史累计包含未计速记录；速度只统计有效窗口记录")
+            reasonLabel.stringValue=notes.joined(separator:"；")
+        }else{reasonLabel.stringValue=awaitingFirstRead ? "首次读取历史记录可能较慢，完成后开始建立窗口":explained.isEmpty ? "速率按完整窗口计算；未知或断档区间在曲线中留空。":Array(Set(explained)).sorted().joined(separator:"；")}
         reasonLabel.toolTip=reasonLabel.stringValue
         chart.metric=selectedMetric;chart.now=previewAt ?? ProcessInfo.processInfo.systemUptime;chart.emptyText=awaitingFirstRead ? "正在读取本地记录…":tokenSpeedStateLabel(snapshot.state)
         if scope == .all {
             chart.series=snapshot.providers.map{TokenSpeedChartSeries(label:$0.provider=="claude" ? "Claude Code":"Codex",color:$0.provider=="claude" ? speedClaudeColor:speedCodexColor,points:$0.trend)}
             let text=NSMutableAttributedString()
-            for (i,p) in snapshot.providers.enumerated(){if i>0{text.append(NSAttributedString(string:"      "))};text.append(NSAttributedString(string:"━━  \(p.provider=="claude" ? "Claude Code":"Codex")  ·  \(awaitingFirstRead ? "等待读取":tokenSpeedStateLabel(p.state))",attributes:[.foregroundColor:p.provider=="claude" ? speedClaudeColor:speedCodexColor,.font:NSFont.systemFont(ofSize:11)]))}
+            for (i,p) in snapshot.providers.enumerated(){
+                if i>0{text.append(NSAttributedString(string:"      "))}
+                let status=p.coverage.partial ? "部分\(p.coverage.includedRecordCount)/\(p.coverage.recordCount)条":awaitingFirstRead ? "等待读取":tokenSpeedStateLabel(p.state)
+                text.append(NSAttributedString(string:"━━  \(p.provider=="claude" ? "Claude Code":"Codex")  ·  \(status)",attributes:[.foregroundColor:p.provider=="claude" ? speedClaudeColor:speedCodexColor,.font:NSFont.systemFont(ofSize:11)]))
+            }
             legend.attributedStringValue=text
         }else{
             let source=chosenTask?.provider ?? selectedProvider ?? .codex
             chart.series=[TokenSpeedChartSeries(label:source.label,color:source == .claude ? speedClaudeColor:speedCodexColor,points:snapshot.trend)]
-            legend.stringValue="\(source.label)  ·  \(chosenTask==nil ? "全部记录":"所选记录")  ·  未知区间留空"
+            legend.stringValue="\(source.label)  ·  \(c.partial ? "部分统计\(c.includedRecordCount)/\(c.recordCount)条":chosenTask==nil ? "全部记录":"所选记录")  ·  未知区间留空"
             legend.textColor=source == .claude ? speedClaudeColor:speedCodexColor
         }
         chart.setAccessibilityLabel("最近120秒的\(metricControl.label(forSegment:metricControl.selectedSegment) ?? "总量")观测速率，横轴从过去到现在，纵轴 tokens 每秒；未知区间不连线")

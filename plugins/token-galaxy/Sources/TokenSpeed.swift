@@ -48,11 +48,20 @@ struct TokenSpeedCoverage: Codable {
     var providerCount: Int
     var lastSampleAgeSeconds: Double?
     var lastGoodSampleAgeSeconds: Double?
+    // Counts describe total-rate coverage. Classifications may still be unknown for included records.
+    var includedRecordCount: Int = 0
+    var excludedRecordCount: Int = 0
+    var missingRecordCount: Int = 0
+    var warmingRecordCount: Int = 0
+    var partial: Bool = false
 }
 struct TokenSpeedTrendPoint: Codable {
     var at: TimeInterval
     var rates: TokenSpeedRates
     var state: TokenSpeedState
+    var partial: Bool = false
+    var includedRecordCount: Int = 0
+    var excludedRecordCount: Int = 0
 }
 struct TokenSpeedProviderSnapshot: Codable {
     var provider: String
@@ -157,6 +166,7 @@ private struct SpeedReading {
     var coverage: TokenSpeedCoverage
     var state: TokenSpeedState { states.total }
 }
+private struct SpeedTrendCacheKey: Hashable { let provider: String, window: Int }
 
 /// Own on the same serial queue as ingest/snapshot (the app uses its main queue).
 /// Uses the reader's existing <=80 records/provider. It never scans logs or AllUsage deltas.
@@ -166,6 +176,7 @@ final class TokenSpeedEngine {
     private var providers = [String: SpeedProviderTrack]()
     private var tasks = [SpeedKey: SpeedTaskTrack]()
     private var latestAt: TimeInterval?
+    private var trendReadings = [SpeedTrendCacheKey: [TimeInterval: SpeedReading]]()
     private let providerNames = [UsageProvider.codex.rawValue, UsageProvider.claude.rawValue]
 
     func ingest(_ sample: CombinedUsageSample, at time: TimeInterval = ProcessInfo.processInfo.systemUptime) {
@@ -262,6 +273,7 @@ final class TokenSpeedEngine {
             provider.members = keys; providers[name] = provider
         }
         latestAt = time
+        pruneTrendReadings(at: time)
         tasks = tasks.filter { $0.value.present || time - $0.value.lastSeen <= Self.retentionSeconds }
         // Churn must not retain unbounded IDs; always preserve the current <=160 records.
         if tasks.count > 320 {
@@ -275,12 +287,17 @@ final class TokenSpeedEngine {
         let seconds = min(300, max(0, trendSeconds))
         let selectedNames = scope.kind == .all ? providerNames : providerNames.filter { $0 == scope.provider }
         let providerSnapshots = selectedNames.map { name -> TokenSpeedProviderSnapshot in
-            let history: SpeedHistory?
-            if scope.kind == .task, let id = scope.taskID { history = tasks[SpeedKey(provider: name, id: id)]?.history }
-            else { history = providers[name]?.history }
-            let reading = read(history, window: window, at: now)
+            let reading = readScope(provider: name, taskID: scope.kind == .task ? scope.taskID : nil, window: window, at: now)
+            let points: [TokenSpeedTrendPoint]
+            if seconds > 0, latestAt != nil {
+                let end = floor(now)
+                points = stride(from: seconds - 1, through: 0, by: -1).map { i in
+                    let at = end - Double(i)
+                    return trendPoint(readTrendScope(provider: name, taskID: scope.kind == .task ? scope.taskID : nil, window: window, at: at), at: at)
+                }
+            } else { points = [] }
             return TokenSpeedProviderSnapshot(provider: name, rates: reading.rates, cumulative: reading.counts, state: reading.state, reasons: reading.reasons,
-                metricStates: reading.states, coverage: reading.coverage, trend: trend(history, window: window, at: now, seconds: seconds))
+                metricStates: reading.states, coverage: reading.coverage, trend: points)
         }
         let reading: SpeedReading
         if scope.kind == .all { reading = combine(providerSnapshots.map { SpeedReading(rates: $0.rates, counts: $0.cumulative, states: $0.metricStates, reasons: $0.reasons, coverage: $0.coverage) }, window: window) }
@@ -288,14 +305,23 @@ final class TokenSpeedEngine {
         else { reading = read(nil, window: window, at: now) }
         var combinedTrend = [TokenSpeedTrendPoint]()
         if scope.kind == .all, seconds > 0, latestAt != nil {
-            let end = floor(now)
-            for i in stride(from: seconds - 1, through: 0, by: -1) {
-                let at = end - Double(i)
-                let r = combine(providerNames.map { read(providers[$0]?.history, window: window, at: at) }, window: window)
-                combinedTrend.append(TokenSpeedTrendPoint(at: at, rates: r.rates, state: r.state))
+            // Reuse each provider's already-computed points instead of rereading 160 task histories.
+            for i in 0..<seconds {
+                let points = providerSnapshots.compactMap { $0.trend.indices.contains(i) ? $0.trend[i] : nil }
+                guard let first = points.first else { continue }
+                let valid = points.filter { $0.rates.total != nil }
+                func sum(_ metric: TokenSpeedMetric) -> Double? {
+                    guard !valid.isEmpty, valid.allSatisfy({ $0.rates[metric] != nil }) else { return nil }
+                    return valid.reduce(0) { $0 + $1.rates[metric]! }
+                }
+                let total = sum(.total), states = points.map { $0.state }
+                let state = total.map { $0 > 0 ? TokenSpeedState.live : .idle } ?? unavailableState(states)
+                let included = points.reduce(0) { $0 + $1.includedRecordCount }, excluded = points.reduce(0) { $0 + $1.excludedRecordCount }
+                combinedTrend.append(TokenSpeedTrendPoint(at: first.at, rates: TokenSpeedRates(total: total, input: sum(.input), output: sum(.output)), state: state,
+                    partial: total != nil && (excluded > 0 || points.contains { $0.partial || ($0.state != .notFound && $0.rates.total == nil) }), includedRecordCount: included, excludedRecordCount: excluded))
             }
         } else { combinedTrend = providerSnapshots.first?.trend ?? [] }
-        return TokenSpeedSnapshot(schemaVersion: 1, name: "Token 观测速度", scope: scope, windowSeconds: window.rawValue, sampledAt: latestAt,
+        return TokenSpeedSnapshot(schemaVersion: 2, name: "Token 观测速度", scope: scope, windowSeconds: window.rawValue, sampledAt: latestAt,
             rates: reading.rates, cumulative: reading.counts, state: reading.state, reasons: reading.reasons, metricStates: reading.states, coverage: reading.coverage,
             trend: combinedTrend, providers: providerSnapshots, scopeLimitPerProvider: 80, unit: "token/s")
     }
@@ -327,47 +353,109 @@ final class TokenSpeedEngine {
             let available = max(0, frame.at - max(since, history.first?.at ?? since))
             if metric == .total { observed = min(w, available) }
             guard available + 0.000_001 >= w else { reasons.formUnion(run.reasons); reasons.insert("window_incomplete"); return (nil, run.state) }
-            var sum: Double = 0
             let cutoff = frame.at - w
-            // (cutoff, completion] attributes the whole delta to the poll where it was observed.
-            var i = index
-            while i >= history.start && history.frames[i].at > cutoff {
-                if let value = history.frames[i].delta[metric] { sum += value }
-                i -= 1
+            // Difference against the last observed frame <= cutoff is equivalent to summing
+            // deltas in (cutoff, completion], and needs only a binary lookup per window.
+            guard let anchorIndex = history.index(at: cutoff), history.frames[anchorIndex].run(metric).since == run.since else {
+                reasons.insert("window_incomplete"); return (nil, run.state)
             }
-            return (sum / w, sum > 0 ? .live : .idle)
+            func count(_ counts: TokenSpeedCounts) -> Int64? {
+                switch metric { case .total: return counts.total; case .input: return counts.input; case .output: return counts.output }
+            }
+            guard let current = count(frame.counts), let before = count(history.frames[anchorIndex].counts), current >= before else {
+                reasons.insert("missing_" + metric.rawValue); return (nil, .unavailable)
+            }
+            let delta = current - before
+            return (Double(delta) / w, delta > 0 ? .live : .idle)
         }
         let total = metric(.total), input = metric(.input), output = metric(.output)
+        let included = total.0 == nil ? 0 : frame.recordCount
+        let excluded = max(0, frame.recordCount - included)
+        let warming = [.warming, .gap].contains(total.1) ? excluded : 0
         return SpeedReading(rates: TokenSpeedRates(total: total.0, input: input.0, output: output.0), counts: frame.counts,
             states: TokenSpeedMetricStates(total: total.1, input: input.1, output: output.1), reasons: reasons.sorted(),
             coverage: TokenSpeedCoverage(windowSeconds: window.rawValue, observedSeconds: observed, complete: total.0 != nil, recordCount: frame.recordCount,
-                providerCount: frame.discovered ? 1 : 0, lastSampleAgeSeconds: age, lastGoodSampleAgeSeconds: frame.lastGoodAt.map { max(0, time - $0) }))
+                providerCount: frame.discovered ? 1 : 0, lastSampleAgeSeconds: age, lastGoodSampleAgeSeconds: frame.lastGoodAt.map { max(0, time - $0) },
+                includedRecordCount: included, excludedRecordCount: excluded, missingRecordCount: excluded - warming, warmingRecordCount: warming))
+    }
+    private func unavailableState(_ states: [TokenSpeedState]) -> TokenSpeedState {
+        if states.contains(.unavailable) { return .unavailable }
+        if states.contains(.gap) { return .gap }
+        if states.contains(.warming) { return .warming }
+        return .notFound
+    }
+    private func readScope(provider: String, taskID: String?, window: TokenSpeedWindow, at time: TimeInterval) -> SpeedReading {
+        if let taskID = taskID { return read(tasks[SpeedKey(provider: provider, id: taskID)]?.history, window: window, at: time) }
+        // Provider history retains discovery, cumulative counts and source-level failure metadata.
+        // Rate eligibility comes exclusively from each task's own continuous window.
+        let metadata = read(providers[provider]?.history, window: window, at: time)
+        guard metadata.coverage.providerCount > 0 else { return metadata }
+        var members = [SpeedReading]()
+        for (key, task) in tasks where key.provider == provider {
+            guard let index = task.history.index(at: time), task.history.frames[index].recordCount > 0 else { continue }
+            members.append(read(task.history, window: window, at: time))
+        }
+        guard !members.isEmpty else { return metadata }
+        var result = combine(members, window: window)
+        result.counts = metadata.counts
+        result.coverage.providerCount = 1
+        return result
     }
     private func combine(_ readings: [SpeedReading], window: TokenSpeedWindow) -> SpeedReading {
         let active = readings.filter { $0.coverage.providerCount > 0 }
         guard !active.isEmpty else { return read(nil, window: window, at: 0) }
+        let included = active.filter { $0.rates.total != nil && $0.coverage.includedRecordCount > 0 }
         func metric(_ metric: TokenSpeedMetric) -> (Double?, TokenSpeedState) {
-            let values = active.map { $0.rates[metric] }
-            if values.allSatisfy({ $0 != nil }) { let sum = values.reduce(0) { $0 + $1! }; return (sum, sum > 0 ? .live : .idle) }
-            let states = active.map { $0.states[metric] }
-            return (nil, states.contains(.unavailable) ? .unavailable : states.contains(.gap) ? .gap : .warming)
+            let values = included.map { $0.rates[metric] }
+            if !included.isEmpty, values.allSatisfy({ $0 != nil }) { let sum = values.reduce(0) { $0 + $1! }; return (sum, sum > 0 ? .live : .idle) }
+            return (nil, unavailableState((included.isEmpty ? active : included).map { $0.states[metric] }))
         }
         let total = metric(.total), input = metric(.input), output = metric(.output)
+        let includedCount = active.reduce(0) { $0 + $1.coverage.includedRecordCount }
+        let excludedCount = active.reduce(0) { $0 + $1.coverage.excludedRecordCount }
+        let partial = !included.isEmpty && (excludedCount > 0 || included.count < active.count || active.contains { $0.coverage.partial })
+        var reasons = Set(active.flatMap { $0.reasons })
+        if partial { reasons.insert("partial_coverage") }
+        let freshReadings = included.isEmpty ? active : included
         return SpeedReading(rates: TokenSpeedRates(total: total.0, input: input.0, output: output.0), counts: Self.sumCounts(active.map { $0.counts }),
-            states: TokenSpeedMetricStates(total: total.1, input: input.1, output: output.1), reasons: Array(Set(active.flatMap { $0.reasons })).sorted(),
-            coverage: TokenSpeedCoverage(windowSeconds: window.rawValue, observedSeconds: active.map { $0.coverage.observedSeconds }.min() ?? 0, complete: total.0 != nil,
+            states: TokenSpeedMetricStates(total: total.1, input: input.1, output: output.1), reasons: reasons.sorted(),
+            coverage: TokenSpeedCoverage(windowSeconds: window.rawValue, observedSeconds: freshReadings.map { $0.coverage.observedSeconds }.min() ?? 0, complete: total.0 != nil,
                 recordCount: active.reduce(0) { $0 + $1.coverage.recordCount }, providerCount: active.count,
-                lastSampleAgeSeconds: active.compactMap { $0.coverage.lastSampleAgeSeconds }.max(), lastGoodSampleAgeSeconds: active.compactMap { $0.coverage.lastGoodSampleAgeSeconds }.max()))
+                lastSampleAgeSeconds: freshReadings.compactMap { $0.coverage.lastSampleAgeSeconds }.max(), lastGoodSampleAgeSeconds: freshReadings.compactMap { $0.coverage.lastGoodSampleAgeSeconds }.max(),
+                includedRecordCount: includedCount, excludedRecordCount: excludedCount,
+                missingRecordCount: active.reduce(0) { $0 + $1.coverage.missingRecordCount }, warmingRecordCount: active.reduce(0) { $0 + $1.coverage.warmingRecordCount }, partial: partial))
     }
-    private func trend(_ history: SpeedHistory?, window: TokenSpeedWindow, at time: TimeInterval, seconds: Int) -> [TokenSpeedTrendPoint] {
-        guard seconds > 0, history?.last != nil else { return [] }
-        let end = floor(time)
-        return stride(from: seconds - 1, through: 0, by: -1).map { i in
-            let at = end - Double(i), reading = read(history, window: window, at: at)
-            return TokenSpeedTrendPoint(at: at, rates: reading.rates, state: reading.state)
+    private func trendPoint(_ reading: SpeedReading, at: TimeInterval) -> TokenSpeedTrendPoint {
+        TokenSpeedTrendPoint(at: at, rates: reading.rates, state: reading.state, partial: reading.coverage.partial,
+            includedRecordCount: reading.coverage.includedRecordCount, excludedRecordCount: reading.coverage.excludedRecordCount)
+    }
+    private func pruneTrendReadings(at time: TimeInterval) {
+        for key in Array(trendReadings.keys) {
+            trendReadings[key] = trendReadings[key]?.filter { $0.key > time - Self.retentionSeconds }
         }
+    }
+    private func readTrendScope(provider: String, taskID: String?, window: TokenSpeedWindow, at time: TimeInterval) -> SpeedReading {
+        // Future/partial seconds can change when the next sample arrives. Never cache those,
+        // and keep current rate cards outside this path. Each completed historical second is fixed.
+        guard taskID == nil, let latest = latestAt, time >= 0, time <= latest,
+              time > latest - Self.retentionSeconds, floor(time) == time else {
+            return readScope(provider: provider, taskID: taskID, window: window, at: time)
+        }
+        let key = SpeedTrendCacheKey(provider: provider, window: window.rawValue)
+        if let cached = trendReadings[key]?[time] { return cached }
+        let reading = readScope(provider: provider, taskID: nil, window: window, at: time)
+        var entries = trendReadings[key] ?? [:]
+        entries[time] = reading
+        entries = entries.filter { $0.key > latest - Self.retentionSeconds }
+        if entries.count > 300 {
+            for expired in entries.keys.sorted().prefix(entries.count - 300) { entries.removeValue(forKey: expired) }
+        }
+        trendReadings[key] = entries
+        return reading
     }
     /// Fixture diagnostics only; no content or identifiers.
     var retainedSampleCount: Int { providers.values.reduce(0) { $0 + $1.history.count } + tasks.values.reduce(0) { $0 + $1.history.count } }
     var retainedTaskCount: Int { tasks.count }
+    var retainedTrendPointCount: Int { trendReadings.values.reduce(0) { $0 + $1.count } }
+    var maximumRetainedTrendPointsPerScope: Int { trendReadings.values.map { $0.count }.max() ?? 0 }
 }

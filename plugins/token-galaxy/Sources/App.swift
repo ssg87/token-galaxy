@@ -297,6 +297,12 @@ final class AppController:NSObject,NSApplicationDelegate,NSTouchBarDelegate,NSMe
             var output=value
             output["speedWindowVisible"]=speedWindow?.window.isVisible ?? false
             output["speedWindowRefreshCount"]=speedWindow?.refreshCount ?? 0
+            if let coverage=speedWindow?.latestSnapshot?.coverage{
+                output["speedPartial"]=coverage.partial
+                output["speedIncludedRecordCount"]=coverage.includedRecordCount
+                output["speedExcludedRecordCount"]=coverage.excludedRecordCount
+                output["speedWindowComplete"]=coverage.complete
+            }
             try JSONSerialization.data(withJSONObject:output,options:[.prettyPrinted,.sortedKeys]).write(to:folder.appendingPathComponent("status.json"),options:.atomic)
         }catch{status.button?.toolTip="运行诊断暂不可写；用量读取继续"}
     }
